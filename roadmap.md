@@ -1,0 +1,6 @@
+- ✅ Scaffold project structure
+- ⬜ Add historical backtest notebook for AAPL/MSFT
+- ⬜ Wire real Alpaca paper account and smoke-test orders
+- ⬜ Add logging sink (S3/CloudWatch) and basic alerting
+- ⬜ Containerize scheduled job for ECS/Fargate
+- ⬜ Add CI to lint/test notebooks and modules
