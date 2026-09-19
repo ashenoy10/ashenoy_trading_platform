@@ -1,0 +1,108 @@
+name: real-data-backtest
+
+# Runs the backtest against real Alpaca minute bars on a GitHub runner,
+# because the Claude cloud environment's network policy blocks alpaca.markets.
+#
+# Two ways to trigger:
+#   1. workflow_dispatch, once this file is on the default branch. GitHub only
+#      offers manual dispatch for workflows present on the default branch.
+#   2. Committing a change to backtest-request.json on this branch. The file
+#      holds the parameters, so every run has a committed, auditable request.
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date, YYYY-MM-DD"
+        required: false
+      end:
+        description: "End date, YYYY-MM-DD"
+        required: false
+      symbols:
+        description: "Comma-separated symbols"
+        required: false
+      feed:
+        description: "Data feed: sip (free for windows older than 15 min) or iex"
+        required: false
+  push:
+    paths:
+      - "backtest-request.json"
+      - ".github/workflows/real-backtest.yml"
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+
+      - name: Resolve parameters
+        id: p
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, pathlib
+          req = {}
+          f = pathlib.Path("backtest-request.json")
+          if f.exists():
+              req = json.loads(f.read_text())
+          def pick(key, fallback):
+              v = os.getenv("IN_" + key.upper()) or req.get(key) or fallback
+              return str(v)
+          print("start=" + pick("start", "2026-06-01"))
+          print("end=" + pick("end", "2026-09-01"))
+          print("symbols=" + pick("symbols", "SPY,QQQ"))
+          print("feed=" + pick("feed", "sip"))
+          PY
+        env:
+          IN_START: ${{ inputs.start }}
+          IN_END: ${{ inputs.end }}
+          IN_SYMBOLS: ${{ inputs.symbols }}
+          IN_FEED: ${{ inputs.feed }}
+
+      - name: Check credentials are present
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: |
+          if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
+            echo "::error::ALPACA_API_KEY / ALPACA_SECRET_KEY repository secrets are not set."
+            exit 1
+          fi
+          echo "Credentials present. Key ID ends in ...${ALPACA_API_KEY: -4}"
+
+      - name: Run backtest on real bars
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_DATA_FEED: ${{ steps.p.outputs.feed }}
+          HFT_SYMBOLS: ${{ steps.p.outputs.symbols }}
+          HFT_CAPITAL: ${{ vars.HFT_CAPITAL || '3000' }}
+          HFT_MONTHLY_TARGET: ${{ vars.HFT_MONTHLY_TARGET || '500' }}
+        run: |
+          set -o pipefail
+          python -m hft.cli realtest \
+            --start "${{ steps.p.outputs.start }}" \
+            --end "${{ steps.p.outputs.end }}" 2>&1 | tee result.txt
+
+      - name: Publish result
+        if: always()
+        run: |
+          {
+            echo "## Real-data backtest"
+            echo ""
+            echo "Window \`${{ steps.p.outputs.start }}\` to \`${{ steps.p.outputs.end }}\`, "
+            echo "symbols \`${{ steps.p.outputs.symbols }}\`, feed \`${{ steps.p.outputs.feed }}\`."
+            echo ""
+            echo '```'
+            cat result.txt 2>/dev/null || echo "run failed before producing output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backtest-result
+          path: result.txt

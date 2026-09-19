@@ -1,137 +1,156 @@
+# hft — a cost-accurate research harness for retail intraday strategies
 
-# Self-Made Trading Bot Project – Planning & Strategy
+Most retail backtests are optimistic because they fill at mid price, ignore
+regulatory fees, evaluate a strategy on the same data that chose it, and rank
+candidates by total profit. Each of those turns a losing strategy into a
+winning chart. This harness removes all four, then tells you plainly when an
+idea does not work.
 
-## 🎯 Goals
-
-1. Learn how to **deploy** an automated trading bot in a **resilient, cloud-hosted** setup (not on local machine).
-2. Understand, implement, and iterate on a trading strategy that **optimizes risk-adjusted returns** (e.g. Sharpe Ratio, drawdown).
-3. Showcase **product management and traceability** through clean GitHub project structure and performance reporting.
-
----
-
-## 🔍 Exploratory Insights
-
-### Can a solo engineer rival hedge fund-style margins?
-
-**Yes — to a degree.** You likely won't match the raw profits of a billion-dollar fund, but can achieve:
-- Sharpe Ratios > 1.5–2.0 with well-tuned strategies
-- 2–5% monthly returns on small capital with smart risk controls
-- Strong skill signaling and real passive income growth
-
----
-
-## 📊 Key Definitions
-
-### Sharpe Ratio
-> Measures risk-adjusted return.
-
-\[
-\text{Sharpe Ratio} = \frac{R_p - R_f}{\sigma_p}
-\]
-
-- \( R_p \): portfolio return  
-- \( R_f \): risk-free rate  
-- \( \sigma_p \): return std dev
-
-### Max Drawdown
-> Worst peak-to-trough decline in portfolio value.
-
-\[
-\text{Drawdown} = \frac{P_t - P_{\text{peak}}}{P_{\text{peak}}}
-\]
-
----
-
-## 💰 Is this a viable way to grow income?
-
-### Conclusion:
-> A trading bot is a **great long-term asset**, but **not the fastest** path to short-term income. For faster gains:
-
-| Alternative                | Time to Income | Passive? | Income Potential |
-|---------------------------|----------------|----------|------------------|
-| Freelance/contract work   | 2–4 weeks      | ❌        | $5k–15k/yr       |
-| Internal raise/job hop    | 1–3 months     | ✅        | $10k–$50k+       |
-| Trading bot (self-funded) | 4–8 weeks      | ✅        | $500–$2k/yr      |
-| Productize bot (blog/SaaS)| 2–4 months     | ✅/⚠️      | $1k–10k+/yr      |
-
----
-
-## ✅ Chosen Path: EC2 + Python Bot
-
-- **Hosting**: Amazon EC2 (persistent VPS with Docker + cron/pm2/systemd)
-- **Broker**: Alpaca API (paper/live)
-- **Data**: Alpaca, Polygon.io, or Yahoo Finance
-- **Strategy**: Mean reversion (z-score on AAPL/MSFT)
-- **Monitoring**: Metrics via logs/CSV → optional Streamlit or Jupyter
-
----
-
-## 📁 GitHub Repo Structure
+It is deliberately built to produce negative results. Every strategy tested in
+it so far has failed, and the [results](results/) directory records exactly
+how. That is the harness working, not the harness broken.
 
 ```
-quantbot/
-├── strategy/
-│   └── mean_reversion.py
-├── data/
-│   ├── fetch_data.py
-│   └── storage.py
-├── execution/
-│   ├── trade_executor.py
-│   └── broker_interface.py
-├── infra/
-│   ├── scheduler.py
-│   └── ec2_setup.sh (optional automation)
-├── reports/
-│   └── metrics.py
-├── notebooks/
-│   └── backtest_results.ipynb
-├── .env.example
-├── requirements.txt
-├── Dockerfile
-├── README.md
-└── roadmap.md
+pip install -r requirements.txt
+python -m pytest tests -q          # 59 tests
+python -m hft.cli feasibility      # what a given target demands
 ```
 
 ---
 
-## 🛠️ Next Tasks
+## What it does differently
 
-### ✅ EC2 Setup
-- [ ] Create EC2 instance (Ubuntu 22.04)
-- [ ] Install Docker + Python
-- [ ] Clone repo, run Docker container
-- [ ] Set up cronjob or `pm2` to run bot on schedule
+**Every fill pays what the market charges.** Half the quoted spread each way,
+slippage, SEC Section 31 at $20.60 per $1M on sells, and the FINRA Trading
+Activity Fee with its per-trade cap. On $3,000 of a liquid ETF that is 2.71
+basis points per round trip. Strategies that look profitable on mid prices
+usually die here, which is the point.
 
-### ✅ Core Code
-- [ ] `mean_reversion.py` – strategy logic
-- [ ] `trade_executor.py` – handles buy/sell logic
-- [ ] `scheduler.py` – automated run loop
-- [ ] `.env` – securely store API keys
+**Selection and validation use different data.** `hft.search` splits the
+window chronologically, fits and ranks every candidate on the earlier portion,
+and leaves the later holdout untouched until finalists are chosen. Days never
+straddle the boundary, and the split is never random, because shuffling time
+series leaks the future into the past.
+
+**Ranking is by t-statistic, not profit.** A configuration that made money on
+six lucky trades cannot outrank a steadier one. The harness also reports how
+many configurations were tried, because the best of K always looks good
+in-sample.
+
+**The verdict logic refuses rather than rationalises.** If the best finalist
+loses out of sample, it says the in-sample result was curve fit. If it wins
+but the t-statistic is under 2, it says that is indistinguishable from luck.
+Only a positive holdout edge with enough trades behind it gets a green light,
+and even then it recommends paper trading first.
+
+**Risk limits are enforced in the backtest, not bolted on later.** Daily and
+monthly loss limits, per-trade risk budget, consecutive-loss and trade-count
+caps, and a hard equity floor all run in the same code path the live runner
+uses, so a backtest cannot show returns the live system would have halted.
 
 ---
 
-## 🔒 Security Notes
+## Commands
 
-- Store keys using `.env` file
-- Never push secrets to GitHub
-- Use IAM roles or encrypted AWS SSM later if scaling
+| Command | What it does |
+|---|---|
+| `feasibility` | Gross edge and win rate a target demands, by trade count |
+| `costs` | Round-trip cost breakdown for one position |
+| `backtest` | Run a strategy on synthetic bars with full costs |
+| `realtest` | Run on real Alpaca minute bars, with a verdict |
+| `search` | Search all candidates with an out-of-sample holdout |
+| `frequency` | Net edge per trade as trade frequency rises |
+| `leverage` | Leverage sensitivity, with and without edge |
+| `ruin` | Monte Carlo probability of hitting the equity floor |
+| `sweep` | How much edge the market would need to contain |
+| `latency` | Measure broker round-trip time |
+| `report` | Rebuild the monthly report |
+
+Historical SIP data is free on Alpaca's Basic plan for any window ending more
+than 15 minutes in the past, so research costs nothing. Only real-time SIP
+needs the $99/month Algo Trader Plus plan.
 
 ---
 
-## 🧠 Final Note
-This project is meant to:
-- Build real skills (infra, product, strategy)
-- Create compounding side income
-- Serve as a portfolio centerpiece for hedge fund or fintech interviews
+## Layout
+
+```
+hft/
+  config.py       capital, target, risk limits, cost model, strategy params
+  costs.py        per-fill spread, slippage, SEC Section 31, FINRA TAF
+  feasibility.py  required edge, required win rate, Kelly, risk of ruin
+  strategy.py     z-score mean reversion, and the Bar/Signal types
+  signals.py      opening range breakout, VWAP reversion, momentum
+  search.py       grid search with chronological holdout and t-ranking
+  backtest.py     event-driven, full costs, same control path as live
+  risk.py         hard limits, halt scopes, and the profit governor
+  marketdata.py   Alpaca bars plus a synthetic generator with tunable edge
+  broker.py       Alpaca REST execution, double-guarded, latency probe
+  runner.py       live/paper loop, persists every closed trade
+  state.py        month state, committed to git
+  report.py       monthly report
+  cli.py          entry point
+results/          recorded findings, including every negative result
+```
+
+### Adding a strategy
+
+Implement `on_bar(bar) -> Signal`, `mark_entry`, `mark_exit`, and optionally
+`stop_bps_for(bar)` to declare your own stop distance for position sizing. Add
+it to the grid in `hft/search.py`. The backtester drives any object with that
+shape, so a new idea needs no engine changes.
 
 ---
 
-## 🚀 Quickstart (local)
+## Safety
 
-1) `python -m venv .venv && source .venv/bin/activate`
-2) `pip install -r requirements.txt`
-3) `cp .env.example .env` and fill Alpaca keys if you want to place live/paper orders. Leave `USE_ALPACA=false` to stay in paper/simulated mode.
-4) Run once: `python -m execution.trade_executor`
-5) Schedule daily close: `python -m infra.scheduler` (defaults to 15:45 Eastern; cron/pm2 also work)
+No order reaches a broker unless `USE_ALPACA` and `HFT_LIVE_ORDERS` are both
+exactly `true`, including against the paper endpoint. Two tests enforce it.
+The default configuration is simulated, and credentials come from the
+environment, never from a committed file.
 
-Docker: `docker build -t quantbot .` then `docker run --env-file .env quantbot`.
+---
+
+## Findings so far
+
+Three structurally different strategy families, 126 configurations, 20 months
+of real SPY and QQQ minute bars, validated on an untouched 6-month holdout.
+Every finalist loses out of sample.
+
+| Strategy | In-sample | Out-of-sample | OOS t |
+|---|---:|---:|---:|
+| Opening range breakout | +4.71 bps | -13.54 bps | -3.53 |
+| Momentum | +0.21 bps | -7.73 bps | -3.33 |
+| VWAP reversion | -1.87 bps | -0.37 bps | -0.13 |
+
+The informative result is the cost decomposition. Breakout and momentum are
+directionally wrong and lose before costs apply. VWAP reversion carries a real
+**+2.34 bps gross edge that the 2.71 bps round-trip cost consumes entirely**.
+The intraday reversion effect exists and has been arbitraged down to almost
+exactly the level of the toll required to harvest it.
+
+Edge measured in basis points does not scale with account size, so this is not
+a capital problem. A +2.34 bps edge against a 2.71 bps cost is negative at
+$3,000 and equally negative at $300,000.
+
+Full write-ups: [FINDINGS.md](FINDINGS.md) and [results/](results/).
+Where the research goes next: [RESEARCH_PLAN.md](RESEARCH_PLAN.md).
+Running it against a live account: [OPERATIONS.md](OPERATIONS.md).
+
+---
+
+## Running research
+
+Two workflows run against real data on GitHub Actions, driven by committed
+request files so every run leaves an auditable record of its parameters:
+
+- `real-backtest.yml` — single strategy, edit `backtest-request.json`
+- `strategy-search.yml` — full search, edit `search-request.json`
+
+Both need `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` as repository secrets. Use
+paper-account keys: market data plans apply to paper and live accounts alike,
+and research never places an order.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -1,0 +1,7 @@
+{
+  "start": "2025-01-15",
+  "end": "2026-09-15",
+  "symbols": "SPY,QQQ",
+  "oos_fraction": 0.3,
+  "note": "run 2 - family-capped finalists, so VWAP reversion and momentum also reach the holdout. Run 1 filled all five slots with opening-range breakout, which lost -14 bps/trade out of sample; if breakouts failed that badly, intraday reversion may be what the period actually rewarded."
+}
