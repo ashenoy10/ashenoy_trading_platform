@@ -109,7 +109,12 @@ class AlpacaBars:
             for row in payload.get("bars", {}).get(symbol, []):
                 out.append(Bar(
                     ts=datetime.fromisoformat(row["t"].replace("Z", "+00:00")),
-                    symbol=symbol, close=float(row["c"]), volume=float(row.get("v", 0.0)),
+                    symbol=symbol,
+                    close=float(row["c"]),
+                    volume=float(row.get("v", 0.0)),
+                    open=float(row.get("o", row["c"])),
+                    high=float(row.get("h", row["c"])),
+                    low=float(row.get("l", row["c"])),
                 ))
             page_token = payload.get("next_page_token")
             if not page_token:

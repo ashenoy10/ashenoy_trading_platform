@@ -1,0 +1,7 @@
+{
+  "start": "2025-01-15",
+  "end": "2026-09-15",
+  "symbols": "SPY,QQQ",
+  "oos_fraction": 0.3,
+  "note": "20-month search: fit on the first ~14 months, validate on the last ~6"
+}

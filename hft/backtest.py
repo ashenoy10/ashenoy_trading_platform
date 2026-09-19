@@ -79,6 +79,30 @@ class BacktestResult:
             worst = min(worst, eq - peak)
         return worst
 
+    @property
+    def net_bps_series(self) -> list[float]:
+        return [t.net_pnl / t.notional * 10_000.0 for t in self.trades if t.notional > 0]
+
+    @property
+    def t_stat(self) -> float:
+        """t-statistic of mean per-trade edge against zero.
+
+        Ranking a strategy search by total profit rewards whichever config got
+        lucky. The t-stat asks whether the per-trade edge is distinguishable
+        from noise given how many trades produced it, which is the question
+        that actually matters. Roughly: |t| under 2 is not evidence.
+        """
+        xs = self.net_bps_series
+        n = len(xs)
+        if n < 2:
+            return 0.0
+        mean = sum(xs) / n
+        var = sum((x - mean) ** 2 for x in xs) / (n - 1)
+        sd = var ** 0.5
+        if sd <= 1e-12:
+            return 0.0
+        return mean / (sd / (n ** 0.5))
+
     def summary(self, capital: float) -> dict:
         n = len(self.trades)
         avg_bps = 0.0
@@ -94,6 +118,7 @@ class BacktestResult:
             "win_rate": round(self.win_rate, 4),
             "max_drawdown": round(self.max_drawdown, 2),
             "return_on_capital": round(self.net_pnl / capital, 4) if capital else 0.0,
+            "t_stat": round(self.t_stat, 3),
             "target_reached_on": self.target_reached_on,
             "halts": self.halts[:5],
         }
@@ -103,9 +128,11 @@ class Backtester:
     def __init__(self, cfg: Config):
         self.cfg = cfg
 
-    def run(self, bars: Iterable[Bar]) -> BacktestResult:
+    def run(self, bars: Iterable[Bar], strategy=None) -> BacktestResult:
+        """`strategy` may be any object exposing on_bar / mark_entry / mark_exit.
+        Defaults to the z-score scalper so existing callers are unchanged."""
         cfg = self.cfg
-        strat = ScalpStrategy(cfg.strategy)
+        strat = strategy if strategy is not None else ScalpStrategy(cfg.strategy)
         risk = RiskManager(limits=cfg.risk, equity=cfg.capital)
         gov = ProfitGovernor(target=cfg.monthly_target, enabled=cfg.stop_at_target)
         res = BacktestResult()
@@ -167,11 +194,17 @@ class Backtester:
                     res.halts.append(gate.reason)
                 continue
 
-            # Convert the z-distance to the stop into a bps distance.
-            window = list(strat._st(bar.symbol).prices)[-cfg.strategy.lookback:]
-            mean = sum(window) / len(window)
-            sd = (sum((x - mean) ** 2 for x in window) / (len(window) - 1)) ** 0.5
-            stop_bps = (stop_gap_z * sd) / bar.close * 10_000.0
+            # Position sizing needs a stop distance. A strategy that knows its
+            # own stop says so; the z-score scalper derives it from volatility.
+            if hasattr(strat, "stop_bps_for"):
+                stop_bps = strat.stop_bps_for(bar)
+            else:
+                window = list(strat._st(bar.symbol).prices)[-cfg.strategy.lookback:]
+                if len(window) < 2:
+                    continue
+                mean = sum(window) / len(window)
+                sd = (sum((x - mean) ** 2 for x in window) / (len(window) - 1)) ** 0.5
+                stop_bps = (stop_gap_z * sd) / bar.close * 10_000.0
             if stop_bps <= 0:
                 continue
 

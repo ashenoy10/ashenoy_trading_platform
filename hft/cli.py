@@ -235,6 +235,75 @@ def cmd_realtest(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_search(cfg: Config, args) -> int:
+    """Search candidate strategies on real bars with an out-of-sample holdout."""
+    import time as _time
+
+    from hft.marketdata import AlpacaBars
+    from hft.search import search
+
+    feed = AlpacaBars(feed=args.feed or os.getenv("ALPACA_DATA_FEED") or "sip")
+    print(f"feed={feed.feed}  symbols={cfg.strategy.symbols}  "
+          f"window={args.start}..{args.end}")
+    bars = []
+    for sym in cfg.strategy.symbols:
+        got = feed.history(sym, start=args.start, end=args.end)
+        print(f"  {sym}: {len(got)} bars")
+        bars.extend(got)
+    if not bars:
+        print("No bars returned. Check the window and your data entitlement.")
+        return 1
+    bars.sort(key=lambda b: b.ts)
+
+    t0 = _time.time()
+    out = search(cfg, bars, oos_fraction=args.oos_fraction,
+                 min_trades=args.min_trades, top_n=args.top)
+    out["window"] = f"{args.start}..{args.end}"
+    out["feed"] = feed.feed
+    out["seconds"] = round(_time.time() - t0, 1)
+    print(json.dumps(out, indent=2))
+
+    print("\n--- verdict ---")
+    k = out["configs_tried"]
+    fins = out["finalists"]
+    if not fins:
+        print(f"None of {k} configurations produced enough trades to judge.")
+        return 0
+
+    print(f"Searched {k} configurations. The best of {k} always looks good "
+          f"in-sample,")
+    print("so only the out-of-sample column below is evidence.\n")
+    print(f"{'strategy':>16} {'IS bps':>8} {'IS t':>7} {'OOS bps':>9} "
+          f"{'OOS t':>7} {'OOS trades':>11}")
+    for f in fins:
+        print(f"{f['name']:>16} {f['in_sample']['bps']:>8.2f} "
+              f"{f['in_sample']['t']:>7.2f} {f['out_of_sample']['bps']:>9.2f} "
+              f"{f['out_of_sample']['t']:>7.2f} {f['out_of_sample']['trades']:>11}")
+
+    best = max(fins, key=lambda f: f["out_of_sample"]["t"])
+    ob, ot, on = (best["out_of_sample"]["bps"], best["out_of_sample"]["t"],
+                  best["out_of_sample"]["trades"])
+    print()
+    if on < args.min_trades:
+        print(f"Best finalist has only {on} out-of-sample trades. Not enough to judge.")
+    elif ob <= 0:
+        print(f"Every finalist loses out-of-sample (best {ob:+.2f} bps/trade).")
+        print("The in-sample results were curve fit. Do not execute any of these.")
+    elif ot < 2.0:
+        print(f"Best out-of-sample edge is {ob:+.2f} bps/trade but t={ot:.2f}, "
+              f"under 2.")
+        print("That is not statistically distinguishable from luck. Do not fund it.")
+    else:
+        monthly = ob / 10_000.0 * cfg.risk.max_position_notional * on / \
+            max(out["out_of_sample_days"] / 21.0, 1e-9)
+        print(f"Best finalist holds up out-of-sample: {ob:+.2f} bps/trade, "
+              f"t={ot:.2f}, {on} trades.")
+        print(f"At ${cfg.risk.max_position_notional:,.0f} per position that is "
+              f"roughly ${monthly:,.0f}/month.")
+        print("Confirm with a paper month before funding.")
+    return 0
+
+
 def cmd_report(cfg: Config, args) -> int:
     period = args.period or datetime.now(timezone.utc).strftime("%Y-%m")
     st = MonthState.load(cfg.state_path, period, cfg.capital)
@@ -298,6 +367,15 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--feed", default=None,
                    help="sip (default, free for windows older than 15 min) or iex")
     s.set_defaults(func=cmd_realtest)
+
+    s = sub.add_parser("search", help="search strategies with an out-of-sample holdout")
+    s.add_argument("--start", required=True)
+    s.add_argument("--end", required=True)
+    s.add_argument("--feed", default=None)
+    s.add_argument("--oos-fraction", type=float, default=0.3)
+    s.add_argument("--min-trades", type=int, default=30)
+    s.add_argument("--top", type=int, default=5)
+    s.set_defaults(func=cmd_search)
 
     s = sub.add_parser("report", help="rebuild the monthly report")
     s.add_argument("--period", default=None)

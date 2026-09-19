@@ -40,6 +40,18 @@ class Bar:
     symbol: str
     close: float
     volume: float = 0.0
+    open: float = 0.0
+    high: float = 0.0
+    low: float = 0.0
+
+    def __post_init__(self) -> None:
+        # Synthetic sources supply close only; treat the bar as a single point.
+        if self.open == 0.0:
+            self.open = self.close
+        if self.high == 0.0:
+            self.high = self.close
+        if self.low == 0.0:
+            self.low = self.close
 
 
 @dataclass

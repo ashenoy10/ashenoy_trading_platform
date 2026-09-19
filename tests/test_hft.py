@@ -449,3 +449,78 @@ def test_backtest_rolls_the_month():
     assert len(months) > 1, "fixture must span a month boundary"
     r = Backtester(cfg).run(bars)
     assert len(r.trades) > 0
+
+
+# -- strategy search ------------------------------------------------------
+
+def test_split_is_chronological_and_disjoint():
+    from hft.search import split_bars
+    bars = list(SyntheticBars(bars=390 * 30, seed=2))
+    a, b = split_bars(bars, oos_fraction=0.3)
+    assert a and b
+    assert max(x.ts for x in a) < min(x.ts for x in b)
+    assert len(a) + len(b) == len(bars)
+
+
+def test_split_never_leaks_a_day_across_the_boundary():
+    from hft.search import split_bars
+    bars = list(SyntheticBars(bars=390 * 30, seed=2))
+    a, b = split_bars(bars, oos_fraction=0.3)
+    assert {x.ts.date() for x in a}.isdisjoint({x.ts.date() for x in b})
+
+
+def test_research_evaluation_disables_the_profit_governor():
+    """A governor halt would truncate the sample and bias every statistic."""
+    from hft.search import Candidate, evaluate
+    from hft.signals import VWAPReversion
+    cfg = replace(Config.from_env(), monthly_target=1.0, stop_at_target=True)
+    bars = list(SyntheticBars(bars=390 * 25, reversion=0.3, seed=4))
+    ev = evaluate(cfg, bars, Candidate("vwap", {}, lambda: VWAPReversion(entry_bps=10.0)))
+    assert ev.result.target_reached_on is None
+    assert not any("target" in h for h in ev.result.halts)
+
+
+def test_t_stat_is_zero_with_fewer_than_two_trades():
+    """Undefined with n<2; must return 0 rather than divide by zero."""
+    from hft.backtest import BacktestResult, ClosedTrade
+    empty = BacktestResult()
+    assert empty.t_stat == 0.0
+    one = BacktestResult(trades=[ClosedTrade(
+        symbol="SPY", side="long", entry_ts=None, exit_ts=None,
+        entry_price=100.0, exit_price=101.0, notional=3000.0,
+        gross_pnl=30.0, costs=1.0, reason="x")])
+    assert one.t_stat == 0.0
+
+
+def test_t_stat_sign_follows_mean_edge():
+    cfg = Config.from_env()
+    losing = Backtester(cfg).run(SyntheticBars(bars=390 * 21, reversion=0.0, seed=11))
+    assert losing.t_stat < 0
+
+
+def test_all_candidate_strategies_run_through_the_engine():
+    from hft.signals import MomentumContinuation, OpeningRangeBreakout, VWAPReversion
+    cfg = Config.from_env()
+    bars = list(SyntheticBars(bars=390 * 20, reversion=0.1, seed=3))
+    for factory in (OpeningRangeBreakout, VWAPReversion, MomentumContinuation):
+        r = Backtester(cfg).run(bars, strategy=factory())
+        assert r.bars_processed == len(bars)
+        for t in r.trades:
+            assert t.net_pnl == pytest.approx(t.gross_pnl - t.costs)
+
+
+def test_orb_takes_at_most_one_trade_per_symbol_per_day():
+    from hft.signals import OpeningRangeBreakout
+    cfg = Config.from_env()
+    bars = list(SyntheticBars(bars=390 * 20, reversion=0.0, seed=8))
+    r = Backtester(cfg).run(bars, strategy=OpeningRangeBreakout())
+    per_day = {}
+    for t in r.trades:
+        key = (t.symbol, t.entry_ts.date())
+        per_day[key] = per_day.get(key, 0) + 1
+    assert all(v == 1 for v in per_day.values())
+
+
+def test_bar_fills_missing_ohlc_from_close():
+    b = Bar(ts=datetime(2026, 6, 1, 14, 0, tzinfo=timezone.utc), symbol="SPY", close=650.0)
+    assert b.open == b.high == b.low == 650.0

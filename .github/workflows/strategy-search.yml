@@ -1,0 +1,91 @@
+name: strategy-search
+
+# Searches candidate strategies over a long window of real bars, fitting only
+# on the earlier portion and validating on an untouched later holdout.
+
+on:
+  workflow_dispatch:
+    inputs:
+      start: {description: "Start date, YYYY-MM-DD", required: false}
+      end: {description: "End date, YYYY-MM-DD", required: false}
+      symbols: {description: "Comma-separated symbols", required: false}
+      oos_fraction: {description: "Holdout fraction, e.g. 0.3", required: false}
+  push:
+    paths:
+      - "search-request.json"
+      - ".github/workflows/strategy-search.yml"
+
+jobs:
+  search:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -r requirements.txt
+
+      - name: Resolve parameters
+        id: p
+        env:
+          IN_START: ${{ inputs.start }}
+          IN_END: ${{ inputs.end }}
+          IN_SYMBOLS: ${{ inputs.symbols }}
+          IN_OOS: ${{ inputs.oos_fraction }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, pathlib
+          req = {}
+          f = pathlib.Path("search-request.json")
+          if f.exists():
+              req = json.loads(f.read_text())
+          def pick(k, d):
+              return str(os.getenv("IN_" + k.upper()) or req.get(k) or d)
+          print("start=" + pick("start", "2025-01-01"))
+          print("end=" + pick("end", "2026-09-15"))
+          print("symbols=" + pick("symbols", "SPY,QQQ"))
+          print("oos=" + pick("oos_fraction", "0.3"))
+          PY
+
+      - name: Check credentials
+        env:
+          K: ${{ secrets.ALPACA_API_KEY }}
+          S: ${{ secrets.ALPACA_SECRET_KEY }}
+        run: |
+          if [ -z "$K" ] || [ -z "$S" ]; then
+            echo "::error::ALPACA_API_KEY / ALPACA_SECRET_KEY are not set."
+            exit 1
+          fi
+
+      - name: Run search
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          ALPACA_DATA_FEED: sip
+          HFT_SYMBOLS: ${{ steps.p.outputs.symbols }}
+          HFT_CAPITAL: ${{ vars.HFT_CAPITAL || '3000' }}
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set -o pipefail
+          python -m hft.cli search \
+            --start "${{ steps.p.outputs.start }}" \
+            --end "${{ steps.p.outputs.end }}" \
+            --oos-fraction "${{ steps.p.outputs.oos }}" 2>&1 | tee search.txt
+
+      - name: Publish result
+        if: always()
+        run: |
+          {
+            echo "## Strategy search"
+            echo ""
+            echo "Window \`${{ steps.p.outputs.start }}\` to \`${{ steps.p.outputs.end }}\`, "
+            echo "symbols \`${{ steps.p.outputs.symbols }}\`, holdout \`${{ steps.p.outputs.oos }}\`."
+            echo ""
+            echo '```'
+            tail -c 60000 search.txt 2>/dev/null || echo "no output"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: search-result, path: search.txt}
