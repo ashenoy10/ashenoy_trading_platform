@@ -6,9 +6,14 @@ The backtests in this repository ran on synthetic data, because market data is
 blocked from the build environment. They prove the engine is correct. They
 prove nothing about profitability. Do these in order.
 
-**Step 1 — real-data backtest.** Add Alpaca keys, pull real minute bars, and
-re-run. Read `FINDINGS.md` first so you know which number decides it: average
-net basis points per trade, after costs. Free.
+**Step 1 — real-data backtest.** Add Alpaca keys as repository secrets, then
+run the **real-data-backtest** workflow from the Actions tab with a start and
+end date. Read `FINDINGS.md` first so you know which number decides it:
+average net basis points per trade, after costs. Free.
+
+This runs on a GitHub runner rather than in a Claude cloud session, because
+that environment's network policy blocks alpaca.markets. The workflow prints
+a verdict alongside the raw numbers.
 
 **Step 2 — paper trade for one month.** `USE_ALPACA=true`, base URL set to the
 paper endpoint, `HFT_LIVE_ORDERS=true`. No real money at risk. This requires

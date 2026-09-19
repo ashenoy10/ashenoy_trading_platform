@@ -121,6 +121,7 @@ enforce it.
 | `python -m hft.cli leverage` | Leverage sensitivity, with and without edge |
 | `python -m hft.cli ruin` | Probability of hitting the equity floor |
 | `python -m hft.cli latency` | Measure broker round-trip time |
+| `python -m hft.cli realtest` | Backtest on real Alpaca minute bars |
 | `python -m hft.cli report` | Rebuild the monthly report |
 
 ```

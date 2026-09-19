@@ -160,6 +160,60 @@ def cmd_latency(cfg: Config, args) -> int:
     return 0
 
 
+def cmd_realtest(cfg: Config, args) -> int:
+    """Backtest on REAL Alpaca minute bars. This is the run that decides.
+
+    Judge it on avg_net_bps_per_trade, not on net_pnl. A positive net on a
+    handful of trades is luck; a positive per-trade edge over hundreds of
+    trades is a signal.
+    """
+    from hft.marketdata import AlpacaBars
+
+    feed = AlpacaBars()
+    print(f"feed={feed.feed}  symbols={cfg.strategy.symbols}  "
+          f"window={args.start}..{args.end}")
+    if feed.feed != "sip":
+        print("WARNING: not using SIP. The IEX feed is ~2-3% of consolidated")
+        print("volume, so these z-scores reflect IEX noise, not the market.")
+
+    all_bars = []
+    for sym in cfg.strategy.symbols:
+        bars = feed.history(sym, start=args.start, end=args.end)
+        print(f"  {sym}: {len(bars)} bars")
+        all_bars.extend(bars)
+    if not all_bars:
+        print("No bars returned. Check the date window and your data entitlement.")
+        return 1
+    all_bars.sort(key=lambda b: b.ts)
+
+    res = Backtester(cfg).run(all_bars)
+    summary = res.summary(cfg.capital)
+    summary["feed"] = feed.feed
+    summary["window"] = f"{args.start}..{args.end}"
+    print(json.dumps(summary, indent=2))
+
+    avg = summary["avg_net_bps_per_trade"]
+    n = summary["trades"]
+    print("\n--- verdict ---")
+    if n < 100:
+        print(f"{n} trades is too few to conclude anything. Widen the window.")
+    elif avg <= 0:
+        print(f"Average net edge is {avg:+.2f} bps per trade. The strategy loses")
+        print("money after costs on this data. More volume makes it worse, and")
+        print("leverage makes it worse faster. Do not fund this.")
+    else:
+        needed = required_edge(cfg.monthly_target, n, cfg.capital, cfg.costs,
+                               args.price).required_net_bps
+        print(f"Average net edge is {avg:+.2f} bps per trade over {n} trades.")
+        print(f"Clearing ${cfg.monthly_target:,.0f}/month at this trade count needs "
+              f"{needed:.2f} bps.")
+        if avg >= needed:
+            print("Above the bar on this window. Confirm on a paper month before funding.")
+        else:
+            print(f"Below the bar by {needed - avg:.2f} bps. Positive, but not enough.")
+    return 0
+
+
 def cmd_report(cfg: Config, args) -> int:
     period = args.period or datetime.now(timezone.utc).strftime("%Y-%m")
     st = MonthState.load(cfg.state_path, period, cfg.capital)
@@ -215,6 +269,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("latency", help="measure broker round-trip latency")
     s.add_argument("--samples", type=int, default=5)
     s.set_defaults(func=cmd_latency)
+
+    s = sub.add_parser("realtest", help="backtest on real Alpaca minute bars")
+    s.add_argument("--start", required=True, help="ISO date, e.g. 2026-08-01")
+    s.add_argument("--end", required=True, help="ISO date, e.g. 2026-09-01")
+    s.add_argument("--price", type=float, default=650.0)
+    s.set_defaults(func=cmd_realtest)
 
     s = sub.add_parser("report", help="rebuild the monthly report")
     s.add_argument("--period", default=None)

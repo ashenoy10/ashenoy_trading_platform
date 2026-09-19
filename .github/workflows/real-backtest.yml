@@ -1,0 +1,65 @@
+name: real-data-backtest
+
+# Runs the backtest against real Alpaca minute bars. This runs on a GitHub
+# runner because the Claude cloud environment's network policy blocks
+# alpaca.markets.
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: "Start date, YYYY-MM-DD"
+        required: true
+      end:
+        description: "End date, YYYY-MM-DD"
+        required: true
+      symbols:
+        description: "Comma-separated symbols"
+        required: false
+        default: "SPY,QQQ"
+      feed:
+        description: "Data feed: iex (free) or sip (needs Algo Trader Plus)"
+        required: false
+        default: "iex"
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_DATA_FEED: ${{ inputs.feed }}
+      HFT_SYMBOLS: ${{ inputs.symbols }}
+      HFT_CAPITAL: ${{ vars.HFT_CAPITAL || '3000' }}
+      HFT_MONTHLY_TARGET: ${{ vars.HFT_MONTHLY_TARGET || '500' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - name: Check credentials are present
+        run: |
+          if [ -z "$ALPACA_API_KEY" ] || [ -z "$ALPACA_SECRET_KEY" ]; then
+            echo "::error::ALPACA_API_KEY / ALPACA_SECRET_KEY repository secrets are not set."
+            exit 1
+          fi
+      - name: Run backtest on real bars
+        run: |
+          python -m hft.cli realtest \
+            --start "${{ inputs.start }}" \
+            --end "${{ inputs.end }}" | tee result.txt
+      - name: Publish result
+        if: always()
+        run: |
+          {
+            echo '## Real-data backtest'
+            echo '```'
+            cat result.txt 2>/dev/null || echo 'run failed'
+            echo '```'
+          } >> $GITHUB_STEP_SUMMARY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backtest-result
+          path: result.txt
