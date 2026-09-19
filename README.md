@@ -5,7 +5,18 @@ things most retail trading code leaves out: a cost model that charges every
 fill what the market actually charges, and a profit governor that stops
 trading for the month the moment $500 is realized.
 
-> **Tested on real market data. The strategy loses money.** Over 736 trades on
+> **Searched properly. No strategy survives costs.** 126 configurations across
+> three strategy families, 20 months of real SPY and QQQ bars, validated on an
+> untouched 6-month holdout: every finalist loses out of sample. The best,
+> VWAP reversion, has a real +2.34 bps gross edge that a 2.71 bps round-trip
+> cost consumes entirely. See
+> [results/2026-09-19-strategy-search-run2.md](results/2026-09-19-strategy-search-run2.md).
+>
+> **Edge in basis points is capital-independent, so more money does not fix
+> this.** A +2.34 bps edge against a 2.71 bps cost is negative at $3,000 and
+> equally negative at $300,000.
+
+> **The original z-score scalper also loses on real data.** Over 736 trades on
 > real SPY and QQQ minute bars, gross P&L was -$4.84 and costs were $597.66,
 > for a net loss of $602.50, or 20.1% of capital in three and a half months.
 > Average net edge was -2.75 bps per trade. See
