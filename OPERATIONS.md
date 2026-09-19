@@ -1,101 +1,79 @@
 # Operations runbook
 
+## Before any money moves
+
+The backtests in this repository ran on synthetic data, because market data is
+blocked from the build environment. They prove the engine is correct. They
+prove nothing about profitability. Do these in order.
+
+**Step 1 — real-data backtest.** Add Alpaca keys, pull real minute bars, and
+re-run. Read `FINDINGS.md` first so you know which number decides it: average
+net basis points per trade, after costs. Free.
+
+**Step 2 — paper trade for one month.** `USE_ALPACA=true`, base URL set to the
+paper endpoint, `HFT_LIVE_ORDERS=true`. No real money at risk. This requires
+the $99/month SIP data subscription to be meaningful, because the free IEX
+feed is 2-3% of volume and will give the strategy a distorted picture.
+
+**Step 3 — decide.** If average net edge per trade is not clearly positive
+across several hundred paper trades, stop. If it is, fund with an amount you
+are willing to lose entirely and start at 1x leverage.
+
 ## Division of labor
 
-I run the platform. Three things are legally or technically yours, and no
-amount of engineering removes them.
+| Step | Who |
+|---|---|
+| Open and fund the Alpaca account | You, once |
+| Subscribe to SIP data ($99/mo) | You, when step 2 begins |
+| Add API keys as GitHub secrets | You, once |
+| Real-data backtest and paper month | Me |
+| Tune, monitor, run the strategy | Me |
+| Monthly report | Me |
+| Withdraw the cash | You, monthly |
 
-| Step | Who | Why |
-|---|---|---|
-| Open the Alpaca account | You, once | Brokerage account opening requires identity verification against your SSN. It cannot be delegated. |
-| Fund it ($175,603) | You, once | Linking your bank and moving money requires your authorization. |
-| Add API keys as GitHub secrets | You, once | ~5 minutes. Steps below. |
-| Deploy the capital into SGOV | Me | `income.cli deploy` |
-| Run the monthly cycle | Me | Scheduled, 2nd of each month |
-| Produce the monthly report | Me | Committed to `reports/monthly/` |
-| Withdraw the $500 | **You, monthly, one click** | See the constraint below. |
+Alpaca's Trading API does not expose transfers for individual accounts;
+programmatic withdrawals live in the Broker API, which is for licensed firms.
+So the monthly withdrawal is one click in the dashboard. ACH is free.
 
-### The withdrawal constraint
+## Setup
 
-Alpaca's Trading API, which is what an individual account gets, exposes orders
-and positions but **not** transfers. Programmatic ACH withdrawals live in the
-Broker API, which is for licensed firms onboarding their own customers, not for
-your own account. Alpaca's own documentation states that users cannot
-programmatically schedule deposits or withdrawals.
-
-So the monthly cash does not move itself. What the platform does instead is
-make the amount unambiguous: after each cycle the report states one number,
-and the cash is sitting in the account waiting. You log in, withdraw that
-amount, done. ACH is free and takes a few business days.
-
-If you want this fully hands-off, the alternative is to let the cash accumulate
-and withdraw quarterly or annually. The platform tracks un-withdrawn cash
-separately from the reserve, so it will tell you the running total. Say the
-word and I will switch the report to a quarterly cadence.
-
-## One-time setup
-
-1. **Open an Alpaca individual brokerage account** at alpaca.markets. Free, no
-   minimum. Link your bank during onboarding.
-2. **Fund it with $175,603.** Confirm the cash has settled before step 5.
-3. **Generate live API keys** from the Alpaca dashboard. Copy both halves; the
-   secret is shown once.
-4. **Add them to this repository**, Settings → Secrets and variables → Actions:
+1. Open an Alpaca individual account. No minimum, commission-free.
+2. Generate API keys. The secret is shown once.
+3. Repository Settings → Secrets and variables → Actions:
    - Secrets: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`
-   - Variables: `ALPACA_BASE_URL` = `https://api.alpaca.markets`,
-     `USE_ALPACA` = `true`, `INCOME_LIVE_ORDERS` = `true`,
-     `INCOME_TARGET_MONTHLY` = `500`, `INCOME_INSTRUMENT` = `SGOV`,
-     `INCOME_PLANNING_YIELD` = `0.0365`
-5. **Tell me it's funded.** I run `deploy`, which buys SGOV with everything
-   except the $3,000 reserve, and I confirm the position.
-
-Before step 4, I strongly suggest one dry run against the paper endpoint
-(`ALPACA_BASE_URL=https://paper-api.alpaca.markets`) to watch a full cycle
-execute. It costs nothing and takes a day.
+   - Variables: `ALPACA_BASE_URL`, `USE_ALPACA`, `HFT_LIVE_ORDERS`,
+     `HFT_CAPITAL`, `HFT_MONTHLY_TARGET`, `ALPACA_DATA_FEED`
+4. Keep `HFT_LIVE_ORDERS=false` until step 3 above is passed.
 
 ## Monthly rhythm
 
-- **2nd of the month, 14:00 UTC** — the scheduled job runs. It reads the
-  month's distributions, pays out, rebalances the reserve, reinvests the
-  surplus, writes `reports/monthly/YYYY-MM.md`, and commits the ledger.
-- **You** read the report and withdraw the stated amount.
+The strategy runs during market hours and halts itself when the month's $500
+is realized. On the 1st, a scheduled job rebuilds the report and commits it.
+You read one page and withdraw.
 
-The report always contains: the payout available, total un-withdrawn cash,
-income received, reserve movement, amount reinvested, current principal, and
-next month's forecast. If anything needs your attention, it appears under an
-**Action required** heading. If that heading is absent, there is nothing to do
-but withdraw.
+The report states: realized net profit, whether the target was hit and when,
+account equity, trade count, win rate, gross P&L, costs paid, and average net
+edge per trade. Watch that last number over time. It is the health of the
+strategy; the monthly total is just its consequence.
 
-## Failure modes and what happens
+## Halt conditions
 
-| Situation | What the platform does |
+| Trigger | Effect |
 |---|---|
-| Distribution smaller than $500 | Reserve covers the gap. Payout stays $500. |
-| Yields fall hard and stay down | Reserve drains over several months. Once it drops under two months of target, the report raises **Action required** and tells you the choice: add capital or accept slow principal drawdown. |
-| Reserve empty and income still short | Sells exactly enough SGOV to pay $500, and logs the sale. Payout still $500. |
-| Principal exhausted | Pays whatever is left and flags `PRINCIPAL EXHAUSTED`. Cannot happen for decades at these yields. |
-| Job fails to run | The cycle is idempotent per period. Re-running is safe; a duplicate is refused. |
-| Job runs twice | Second run refuses with "already processed". |
-| Credentials missing or wrong flags | Orders raise `PermissionError` before anything is sent. |
+| $500 realized | Stops for the month. Resumes on the 1st. |
+| 3% daily loss | Stops for the day. Resumes next session. |
+| 10% monthly loss | Stops for the month. |
+| 6 consecutive losses | Stops until a new day. |
+| Equity below 80% of capital | Full halt. Does not reset. Requires your decision. |
 
-## Safety properties, each covered by a test
+The equity floor is deliberate. If the account is down 20%, the strategy has
+been wrong for long enough that it should not be allowed to keep going without
+a human looking at it.
 
-- The payout is exactly the target. A windfall does not raise it; a shortfall
-  does not lower it until principal is genuinely gone.
-- Principal is never sold while the reserve has money in it.
-- No order is ever placed unless `USE_ALPACA` and `INCOME_LIVE_ORDERS` are both
-  literally `true`.
-- The ledger is append-only and lives in git, so every cycle is auditable and
-  reconstructable.
-- A period can only be processed once.
+## Security
 
-## Security note — act on this
-
-The repository's original `.env.example` contained what appear to be **real
-Alpaca paper-trading API keys**, and they are in the git history of commit
-`481f9b7`. I have removed them from the working tree and added `.env` to
-`.gitignore`, but history rewriting is destructive so I have not touched it.
-
-Revoke those keys in the Alpaca dashboard. They are paper keys, so the exposure
-is limited to a simulated account, but rotate them anyway and never reuse that
-pattern for live keys. Live keys go in GitHub Secrets, never in a file.
+The original `.env.example` in commit `481f9b7` contained real-looking Alpaca
+paper API keys, and they remain in git history. `.env` is now gitignored and
+the example file holds only placeholders, but history was not rewritten.
+**Revoke those keys in the Alpaca dashboard.** Live keys belong in GitHub
+Secrets, never in a file.

@@ -1,7 +1,10 @@
-.env
-__pycache__/
 *.pyc
-.venv/
-data/latest_prices.csv
+.env
 .pytest_cache/
+.venv/
+__pycache__/
+data/hft_state.json
+data/latest_prices.csv
 data/sim_account.json
+reports/*.json
+reports/*.md

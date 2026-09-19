@@ -1,0 +1,37 @@
+name: monthly-report
+
+on:
+  schedule:
+    - cron: "0 13 1 * *"   # 1st of the month, 13:00 UTC
+  workflow_dispatch:
+    inputs:
+      period:
+        description: "Period to report, YYYY-MM (blank = current)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    env:
+      HFT_CAPITAL: ${{ vars.HFT_CAPITAL }}
+      HFT_MONTHLY_TARGET: ${{ vars.HFT_MONTHLY_TARGET }}
+      HFT_STATE_PATH: data/hft_state.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m hft.cli report ${{ inputs.period && format('--period {0}', inputs.period) || '' }}
+      - name: Commit report
+        run: |
+          git config user.name "hft-bot"
+          git config user.email "noreply@github.com"
+          git add reports data/hft_state.json || true
+          git diff --staged --quiet || git commit -m "Monthly report $(date -u +%Y-%m)"
+          git push
+      - name: Summary
+        run: cat reports/*.md >> $GITHUB_STEP_SUMMARY

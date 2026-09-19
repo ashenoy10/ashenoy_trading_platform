@@ -3,5 +3,5 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
-ENTRYPOINT ["python", "-m", "income.cli"]
-CMD ["status"]
+ENTRYPOINT ["python", "-m", "hft.cli"]
+CMD ["feasibility"]
