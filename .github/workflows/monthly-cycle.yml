@@ -1,0 +1,45 @@
+name: monthly-income-cycle
+
+on:
+  schedule:
+    # 14:00 UTC on the 2nd of each month (after month-end distributions settle)
+    - cron: "0 14 2 * *"
+  workflow_dispatch:
+    inputs:
+      period:
+        description: "Period to run, YYYY-MM (blank = current month)"
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  cycle:
+    runs-on: ubuntu-latest
+    env:
+      ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+      ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+      ALPACA_BASE_URL: ${{ vars.ALPACA_BASE_URL }}
+      USE_ALPACA: ${{ vars.USE_ALPACA }}
+      INCOME_LIVE_ORDERS: ${{ vars.INCOME_LIVE_ORDERS }}
+      INCOME_TARGET_MONTHLY: ${{ vars.INCOME_TARGET_MONTHLY }}
+      INCOME_PLANNING_YIELD: ${{ vars.INCOME_PLANNING_YIELD }}
+      INCOME_INSTRUMENT: ${{ vars.INCOME_INSTRUMENT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest tests -q
+      - name: Run cycle
+        run: python -m income.cli run ${{ inputs.period && format('--period {0}', inputs.period) || '' }}
+      - name: Commit ledger and report
+        run: |
+          git config user.name "income-bot"
+          git config user.email "noreply@github.com"
+          git add data/income_ledger.json reports/monthly
+          git diff --staged --quiet || git commit -m "Monthly income cycle $(date -u +%Y-%m)"
+          git push
+      - name: Summary
+        run: cat reports/monthly/*.md >> $GITHUB_STEP_SUMMARY

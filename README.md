@@ -1,137 +1,155 @@
+# Income Platform — $500/month, held flat
 
-# Self-Made Trading Bot Project – Planning & Strategy
+A single-purpose system. It does not try to beat the market. It holds a
+Treasury-bill ETF, collects the monthly distribution, pays out **exactly
+$500**, keeps a reserve that absorbs the months when income lands short, and
+reinvests every dollar of surplus. Your only jobs are to fund it once and to
+withdraw the cash each month.
 
-## 🎯 Goals
-
-1. Learn how to **deploy** an automated trading bot in a **resilient, cloud-hosted** setup (not on local machine).
-2. Understand, implement, and iterate on a trading strategy that **optimizes risk-adjusted returns** (e.g. Sharpe Ratio, drawdown).
-3. Showcase **product management and traceability** through clean GitHub project structure and performance reporting.
-
----
-
-## 🔍 Exploratory Insights
-
-### Can a solo engineer rival hedge fund-style margins?
-
-**Yes — to a degree.** You likely won't match the raw profits of a billion-dollar fund, but can achieve:
-- Sharpe Ratios > 1.5–2.0 with well-tuned strategies
-- 2–5% monthly returns on small capital with smart risk controls
-- Strong skill signaling and real passive income growth
+Target: **$500.00/month, ±$50 tolerance.** The engine pays exactly $500 and
+treats anything above it as surplus, so the band is only ever used for
+reporting. See [OPERATIONS.md](OPERATIONS.md) for the runbook.
 
 ---
 
-## 📊 Key Definitions
+## How much money you need
 
-### Sharpe Ratio
-> Measures risk-adjusted return.
+Income is principal × yield. There is no way around that arithmetic, so the
+capital number is set by the yield of whatever you are willing to hold.
 
-\[
-\text{Sharpe Ratio} = \frac{R_p - R_f}{\sigma_p}
-\]
+The instrument this platform defaults to is **SGOV** (iShares 0-3 Month
+Treasury Bond ETF), whose 30-day SEC yield was **3.65%** on 17 September 2026,
+net of its 0.09% expense ratio.
 
-- \( R_p \): portfolio return  
-- \( R_f \): risk-free rate  
-- \( \sigma_p \): return std dev
+| | Amount |
+|---|---:|
+| Break-even principal at 3.65% | $164,384 |
+| Principal with 5% cushion (what the platform sizes) | **$172,603** |
+| Starter cash reserve (6 × $500) | **$3,000** |
+| **Total to deposit** | **$175,603** |
 
-### Max Drawdown
-> Worst peak-to-trough decline in portfolio value.
+The cushion makes the portfolio earn about $525/month in the base case. That
+$25 surplus is reinvested, which grows principal and keeps the payout safe as
+rates drift down.
 
-\[
-\text{Drawdown} = \frac{P_t - P_{\text{peak}}}{P_{\text{peak}}}
-\]
-
----
-
-## 💰 Is this a viable way to grow income?
-
-### Conclusion:
-> A trading bot is a **great long-term asset**, but **not the fastest** path to short-term income. For faster gains:
-
-| Alternative                | Time to Income | Passive? | Income Potential |
-|---------------------------|----------------|----------|------------------|
-| Freelance/contract work   | 2–4 weeks      | ❌        | $5k–15k/yr       |
-| Internal raise/job hop    | 1–3 months     | ✅        | $10k–$50k+       |
-| Trading bot (self-funded) | 4–8 weeks      | ✅        | $500–$2k/yr      |
-| Productize bot (blog/SaaS)| 2–4 months     | ✅/⚠️      | $1k–10k+/yr      |
-
----
-
-## ✅ Chosen Path: EC2 + Python Bot
-
-- **Hosting**: Amazon EC2 (persistent VPS with Docker + cron/pm2/systemd)
-- **Broker**: Alpaca API (paper/live)
-- **Data**: Alpaca, Polygon.io, or Yahoo Finance
-- **Strategy**: Mean reversion (z-score on AAPL/MSFT)
-- **Monitoring**: Metrics via logs/CSV → optional Streamlit or Jupyter
-
----
-
-## 📁 GitHub Repo Structure
+Run the numbers yourself at any time:
 
 ```
-quantbot/
-├── strategy/
-│   └── mean_reversion.py
-├── data/
-│   ├── fetch_data.py
-│   └── storage.py
-├── execution/
-│   ├── trade_executor.py
-│   └── broker_interface.py
-├── infra/
-│   ├── scheduler.py
-│   └── ec2_setup.sh (optional automation)
-├── reports/
-│   └── metrics.py
-├── notebooks/
-│   └── backtest_results.ipynb
-├── .env.example
-├── requirements.txt
-├── Dockerfile
-├── README.md
-└── roadmap.md
+python -m income.cli size
+python -m income.cli plan      # includes yield sensitivity
+```
+
+### If $175k is more than you want to commit
+
+Lower capital is available only by accepting risk to the principal. These are
+the honest options, at current yields:
+
+| Approach | Yield | Principal for $500/mo | What you are accepting |
+|---|---:|---:|---|
+| T-bill ETF (SGOV) — **default** | 3.65% | $164,000 | Essentially none. Backed by Treasuries, state-tax exempt. |
+| High-yield savings | up to 4.21% | $143,000 | FDIC insured, but the rate is variable and this platform cannot automate a bank. |
+| 70% SGOV / 30% JEPI | ~5.0% | $120,000 | ~30% equity exposure. A 30% equity drawdown costs roughly 9% of the portfolio. |
+| Covered-call ETF (JEPI) | ~8.15% | $74,000 | Distributions vary month to month, and NAV erodes in flat-to-down markets. The $500 is no longer reliable. |
+
+My recommendation is the default. You asked for $500 a month with no surprises,
+and the only configuration that actually delivers that is the boring one. If you
+want the $120,000 blend instead, say so and I will change the instrument mix and
+re-run the sizing; the engine handles it without code changes.
+
+---
+
+## What it costs to stand up
+
+Nothing. Every service in the stack has a free tier that covers this workload.
+
+| Item | Cost | Note |
+|---|---:|---|
+| Alpaca brokerage account | $0 | No minimum, no inactivity fee, commission-free US equities/ETFs. |
+| Alpaca market data | $0 | The free tier is enough. This platform reads account and activity endpoints, not real-time quotes. The $99/mo Algo Trader Plus plan is **not** needed. |
+| GitHub Actions (the scheduler) | $0 | ~2 minutes of compute per month against a 2,000 min/month free allowance on private repos, unlimited on public. |
+| Server / VPS | $0 | There isn't one. The monthly job runs on GitHub's runner. |
+| ACH withdrawal | $0 | Alpaca does not charge for withdrawals. |
+| SEC Section 31 fee | ~$0.01/yr | $20.60 per $1M, sells only. Only charged in the rare month we sell principal. |
+| FINRA trading activity fee | <$0.01 | Per-share, sells only, capped at $8.30 per trade. |
+| SGOV expense ratio | $155/yr | 0.09% on $172,603. Already deducted from the 3.65% yield above, not a separate bill. |
+
+**There is nothing for you to unblock or pay for.** The only money that moves is
+your capital.
+
+One thing that is not a fee but is real: **taxes.** The $6,000/year is ordinary
+income, taxable federally, and nothing is withheld. Treasury interest is exempt
+from state and local tax, which is a meaningful edge in a high-tax state. Set
+aside your marginal rate on the $6,000, or tell me and I will size the principal
+so that $500 is the *after-tax* number.
+
+---
+
+## How it works
+
+Once a month the scheduled job runs one cycle:
+
+1. Read the SGOV distributions that landed since the last run.
+2. Add them to the reserve. That pool is what the payout comes from.
+3. Pay exactly $500. If the pool is short, the reserve covers it; only if the
+   reserve is empty does the platform sell principal, and it flags that loudly.
+4. Refill the reserve up to six months of target.
+5. Reinvest whatever is left into SGOV.
+6. Write the report and commit the ledger to git.
+
+Cash sitting in the account after a cycle is your payout plus the reserve. The
+report tells you exactly which number is yours to take.
+
+The reserve is the part that makes the payout constant. Distributions are not
+flat month to month, and yields move. Simulated over 18 months with a yield
+collapse from 3.65% to 2.00% in month 6, the payout is $500.00 every single
+month, with the reserve absorbing the entire gap:
+
+```
+python -m income.cli simulate --months 18 --shock-month 6 --shock-yield 0.02
+```
+
+When income runs persistently below target, the report says so and tells you
+whether to add capital or accept a slow principal drawdown. It will not quietly
+eat your principal.
+
+---
+
+## Commands
+
+| Command | What it does |
+|---|---|
+| `python -m income.cli size` | Capital required for the target |
+| `python -m income.cli plan` | Forecast plus yield sensitivity table |
+| `python -m income.cli status` | Account and ledger snapshot, including withdrawable cash |
+| `python -m income.cli deploy` | One-time: invest the deposit, hold back the reserve |
+| `python -m income.cli run` | The monthly cycle; writes `reports/monthly/YYYY-MM.md` |
+| `python -m income.cli simulate` | Multi-month dry run, no state touched |
+
+Everything defaults to a simulated account. Real orders require **both**
+`USE_ALPACA=true` and `INCOME_LIVE_ORDERS=true`; either one missing and the
+platform refuses to place an order, even against the paper endpoint. That is
+covered by a test.
+
+```
+pip install -r requirements.txt
+python -m pytest tests -q
 ```
 
 ---
 
-## 🛠️ Next Tasks
+## Layout
 
-### ✅ EC2 Setup
-- [ ] Create EC2 instance (Ubuntu 22.04)
-- [ ] Install Docker + Python
-- [ ] Clone repo, run Docker container
-- [ ] Set up cronjob or `pm2` to run bot on schedule
-
-### ✅ Core Code
-- [ ] `mean_reversion.py` – strategy logic
-- [ ] `trade_executor.py` – handles buy/sell logic
-- [ ] `scheduler.py` – automated run loop
-- [ ] `.env` – securely store API keys
-
----
-
-## 🔒 Security Notes
-
-- Store keys using `.env` file
-- Never push secrets to GitHub
-- Use IAM roles or encrypted AWS SSM later if scaling
-
----
-
-## 🧠 Final Note
-This project is meant to:
-- Build real skills (infra, product, strategy)
-- Create compounding side income
-- Serve as a portfolio centerpiece for hedge fund or fintech interviews
-
----
-
-## 🚀 Quickstart (local)
-
-1) `python -m venv .venv && source .venv/bin/activate`
-2) `pip install -r requirements.txt`
-3) `cp .env.example .env` and fill Alpaca keys if you want to place live/paper orders. Leave `USE_ALPACA=false` to stay in paper/simulated mode.
-4) Run once: `python -m execution.trade_executor`
-5) Schedule daily close: `python -m infra.scheduler` (defaults to 15:45 Eastern; cron/pm2 also work)
-
-Docker: `docker build -t quantbot .` then `docker run --env-file .env quantbot`.
+```
+income/
+  config.py     target, tolerance, instrument, yields — all env-overridable
+  sizing.py     capital math: principal, reserve, months of cover
+  accounts.py   SimulatedAccount + AlpacaAccount (REST, order-guarded)
+  ledger.py     append-only JSON record of every cycle, committed to git
+  engine.py     the monthly cycle and the payout rules
+  report.py     markdown + json monthly report
+  cli.py        entry point
+tests/          19 tests covering sizing, payout invariants, and safety
+.github/workflows/
+  monthly-cycle.yml   scheduled run, commits ledger and report
+  tests.yml           CI
+```

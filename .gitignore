@@ -1,0 +1,7 @@
+.env
+__pycache__/
+*.pyc
+.venv/
+data/latest_prices.csv
+.pytest_cache/
+data/sim_account.json
