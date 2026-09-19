@@ -2,5 +2,6 @@
   "start": "2026-06-01",
   "end": "2026-09-15",
   "symbols": "SPY,QQQ",
-  "feed": "sip"
+  "feed": "sip",
+  "note": "run 2 - after fixing the UTC session window and the never-clearing consecutive-loss halt"
 }

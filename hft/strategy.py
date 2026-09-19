@@ -16,6 +16,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from datetime import time as dtime
 from enum import Enum
+from zoneinfo import ZoneInfo
 
 from hft.config import StrategyParams
 
@@ -58,6 +59,9 @@ class SymbolState:
     entry_z: float = 0.0
 
 
+MARKET_TZ = ZoneInfo("America/New_York")
+
+
 def _parse_hhmm(value: str) -> dtime:
     h, m = value.split(":")
     return dtime(int(h), int(m))
@@ -87,7 +91,16 @@ class ScalpStrategy:
         return (window[-1] - mean) / sd
 
     def in_session(self, ts) -> bool:
-        t = ts.time() if hasattr(ts, "time") else ts
+        """Session bounds are US market local time, not UTC.
+
+        Alpaca returns bar timestamps in UTC. Comparing those directly against
+        an Eastern window silently shifted the trading day by 4-5 hours and put
+        it in the pre-market, which is exactly what the first real-data run hit.
+        """
+        if hasattr(ts, "tzinfo"):
+            t = (ts.astimezone(MARKET_TZ) if ts.tzinfo is not None else ts).time()
+        else:
+            t = ts
         return self._start <= t <= self._end
 
     def on_bar(self, bar: Bar) -> Signal:

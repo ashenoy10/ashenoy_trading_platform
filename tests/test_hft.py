@@ -370,3 +370,82 @@ def test_market_data_requires_credentials(monkeypatch):
     monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
     with pytest.raises(ValueError):
         AlpacaBars()
+
+
+# -- regressions found by the first real-data backtest ---------------------
+
+def test_consecutive_loss_halt_clears_on_a_new_day():
+    """Regression: the halt was matched by reason-string prefix, so a
+    consecutive-loss halt never cleared and the engine went idle forever."""
+    from hft.risk import HaltScope
+    r = RiskManager(limits=RiskLimits(max_consecutive_losses=3), equity=3000.0)
+    r.start_day(date(2026, 6, 1), 3000.0)
+    for _ in range(3):
+        r.record_trade(-1.0)
+    d = r.can_enter(100.0)
+    assert not d.allowed and r.halt_scope is HaltScope.DAY
+    r.start_day(date(2026, 6, 2), 2997.0)
+    assert r.can_enter(100.0).allowed
+    assert r.consecutive_losses == 0
+
+
+def test_equity_halt_survives_a_new_day():
+    from hft.risk import HaltScope
+    r = RiskManager(limits=RiskLimits(min_equity=2400.0), equity=2399.0)
+    r.can_enter(100.0)
+    assert r.halt_scope is HaltScope.PERMANENT
+    r.start_day(date(2026, 6, 2), 2399.0)
+    assert not r.can_enter(100.0).allowed
+
+
+def test_monthly_halt_survives_a_new_day_but_clears_on_a_new_month():
+    from hft.risk import HaltScope
+    r = RiskManager(limits=RiskLimits(max_monthly_loss=50.0), equity=3000.0)
+    r.start_day(date(2026, 6, 1), 3000.0)
+    r.record_trade(-60.0)
+    r.can_enter(100.0)
+    assert r.halt_scope is HaltScope.MONTH
+    r.start_day(date(2026, 6, 2), 2940.0)
+    assert not r.can_enter(100.0).allowed
+    r.start_month()
+    assert r.can_enter(100.0).allowed
+
+
+def test_session_window_is_eastern_not_utc():
+    """Regression: Alpaca stamps bars in UTC. Comparing them against an
+    Eastern window shifted the trading day into the pre-market."""
+    from datetime import timezone
+    s = ScalpStrategy(StrategyParams(trade_start="09:45", trade_end="15:50"))
+    # 14:00 UTC == 10:00 ET in June: inside the session.
+    assert s.in_session(datetime(2026, 6, 15, 14, 0, tzinfo=timezone.utc))
+    # 13:00 UTC == 09:00 ET: pre-market, outside the session.
+    assert not s.in_session(datetime(2026, 6, 15, 13, 0, tzinfo=timezone.utc))
+    # 20:30 UTC == 16:30 ET: after the close.
+    assert not s.in_session(datetime(2026, 6, 15, 20, 30, tzinfo=timezone.utc))
+
+
+def test_session_window_handles_daylight_saving_shift():
+    from datetime import timezone
+    s = ScalpStrategy(StrategyParams(trade_start="09:45", trade_end="15:50"))
+    # January: ET is UTC-5, so 15:00 UTC == 10:00 ET.
+    assert s.in_session(datetime(2026, 1, 15, 15, 0, tzinfo=timezone.utc))
+    # July: ET is UTC-4, so 15:00 UTC == 11:00 ET, also in session,
+    # but 14:00 UTC is 09:00 ET in January and 10:00 ET in July.
+    assert not s.in_session(datetime(2026, 1, 15, 14, 0, tzinfo=timezone.utc))
+    assert s.in_session(datetime(2026, 7, 15, 14, 0, tzinfo=timezone.utc))
+
+
+def test_backtest_rolls_the_month():
+    """A multi-month window must reset the monthly budget, or one bad month
+    halts every month that follows."""
+    from datetime import timedelta, timezone
+    cfg = replace(Config.from_env(), monthly_target=1e9)  # governor never fires
+    bars = list(SyntheticBars(bars=390 * 45, reversion=0.3, seed=9))
+    # Stretch the synthetic bars across a real month boundary.
+    base = datetime(2026, 6, 25, 14, 0, tzinfo=timezone.utc)
+    for i, b in enumerate(bars):
+        b.ts = base + timedelta(minutes=i)
+    months = {(b.ts.year, b.ts.month) for b in bars}
+    assert len(months) > 1, "fixture must span a month boundary"
+    r = Backtester(cfg).run(bars)
+    assert len(r.trades) > 0

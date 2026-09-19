@@ -111,6 +111,7 @@ class Backtester:
         res = BacktestResult()
 
         equity = cfg.capital
+        cur_month: tuple[int, int] | None = None
         open_pos: dict[str, dict] = {}
         # Stop distance drives sizing: the z-gap between entry and stop,
         # expressed in bps, using the strategy's own volatility estimate.
@@ -120,6 +121,12 @@ class Backtester:
             res.bars_processed += 1
             day = bar.ts.date() if hasattr(bar.ts, "date") else None
             if day is not None:
+                if cur_month is not None and (day.year, day.month) != cur_month:
+                    # New calendar month: monthly loss budget and the profit
+                    # governor both reset, exactly as they do in live trading.
+                    risk.start_month()
+                    gov.reset()
+                cur_month = (day.year, day.month)
                 risk.start_day(day, equity)
 
             sig = strat.on_bar(bar)
