@@ -51,18 +51,23 @@ python -m hft.cli ruin
 | GitHub Actions (reporting) | $0 |
 | SEC Section 31 fee | $20.60 per $1M sold |
 | FINRA Trading Activity Fee | $0.000166/share sold, capped $8.30 |
-| **Alpaca SIP market data** | **$99/month** |
+| Alpaca SIP **historical** data (backtesting) | $0 |
+| Alpaca SIP **real-time** data (live trading) | $99/month |
 
-The last line is the one that matters. The free data tier is IEX only, roughly
-2-3% of consolidated volume. A strategy that triggers on short-horizon price
-extremes computed from 3% of the tape is measuring the wrong thing. Real
-scalping needs the full SIP feed, which is Alpaca's Algo Trader Plus plan at
-$99/month.
+The data line splits in two, and the split matters.
 
-That is **20% of the target, spent before the first trade**, and it is a fixed
-cost that does not scale down in a bad month. Budget $1,188/year against a
-$6,000/year goal. This is the one expense I need you to unblock, and I would
-not spend it until the paper results justify it.
+**Backtesting is free.** Alpaca's Basic plan serves full SIP data for any
+window ending more than 15 minutes in the past. So the decisive test, whether
+this strategy has a positive edge after costs on real market data, costs
+nothing. Do not pay for anything before running it.
+
+**Live trading is not.** Real-time SIP quotes require the Algo Trader Plus
+plan at $99/month. The free real-time feed is IEX only, roughly 2-3% of
+consolidated volume, and a strategy that triggers on short-horizon price
+extremes computed from 3% of the tape is measuring noise rather than the
+market. That $99 is 20% of the target and does not scale down in a bad month,
+so it is the one expense to unblock, and only once the free backtest justifies
+it.
 
 ---
 

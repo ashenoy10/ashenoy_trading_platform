@@ -16,9 +16,10 @@ that environment's network policy blocks alpaca.markets. The workflow prints
 a verdict alongside the raw numbers.
 
 **Step 2 — paper trade for one month.** `USE_ALPACA=true`, base URL set to the
-paper endpoint, `HFT_LIVE_ORDERS=true`. No real money at risk. This requires
-the $99/month SIP data subscription to be meaningful, because the free IEX
-feed is 2-3% of volume and will give the strategy a distorted picture.
+paper endpoint, `HFT_LIVE_ORDERS=true`. No real money at risk. This is the
+step that needs the $99/month Algo Trader Plus subscription, because live
+decisions need real-time SIP quotes and the free real-time feed is IEX only,
+2-3% of volume. Step 1 does not need it: historical SIP is free.
 
 **Step 3 — decide.** If average net edge per trade is not clearly positive
 across several hundred paper trades, stop. If it is, fund with an amount you
@@ -28,7 +29,7 @@ are willing to lose entirely and start at 1x leverage.
 
 | Step | Who |
 |---|---|
-| Open and fund the Alpaca account | You, once |
+| Open an Alpaca account and generate **paper** API keys | You, once |
 | Subscribe to SIP data ($99/mo) | You, when step 2 begins |
 | Add API keys as GitHub secrets | You, once |
 | Real-data backtest and paper month | Me |
@@ -45,7 +46,11 @@ So the monthly withdrawal is one click in the dashboard. ACH is free.
 1. Open an Alpaca individual account. No minimum, commission-free.
 2. Generate API keys. The secret is shown once.
 3. Repository Settings → Secrets and variables → Actions:
-   - Secrets: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`
+   - Secrets: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY` — use the **paper**
+     account keys. Market data plans apply to paper and live accounts alike,
+     so paper keys pull the same bars. Steps 1 and 2 never need a live key,
+     and this repository is public, so a key that can move real money does
+     not belong in its secrets until you have decided to fund.
    - Variables: `ALPACA_BASE_URL`, `USE_ALPACA`, `HFT_LIVE_ORDERS`,
      `HFT_CAPITAL`, `HFT_MONTHLY_TARGET`, `ALPACA_DATA_FEED`
 4. Keep `HFT_LIVE_ORDERS=false` until step 3 above is passed.

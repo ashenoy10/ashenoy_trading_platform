@@ -18,9 +18,9 @@ on:
         required: false
         default: "SPY,QQQ"
       feed:
-        description: "Data feed: iex (free) or sip (needs Algo Trader Plus)"
+        description: "Data feed: sip (free for windows older than 15 min) or iex"
         required: false
-        default: "iex"
+        default: "sip"
 
 jobs:
   backtest:

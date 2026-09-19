@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from datetime import datetime, timezone
 
 from hft.backtest import Backtester
@@ -169,12 +170,32 @@ def cmd_realtest(cfg: Config, args) -> int:
     """
     from hft.marketdata import AlpacaBars
 
-    feed = AlpacaBars()
+    from datetime import datetime, timedelta, timezone
+
+    feed = AlpacaBars(feed=args.feed or os.getenv("ALPACA_DATA_FEED") or "sip")
     print(f"feed={feed.feed}  symbols={cfg.strategy.symbols}  "
           f"window={args.start}..{args.end}")
-    if feed.feed != "sip":
-        print("WARNING: not using SIP. The IEX feed is ~2-3% of consolidated")
-        print("volume, so these z-scores reflect IEX noise, not the market.")
+
+    # SIP historical data is free on the Basic plan as long as the window ends
+    # at least 15 minutes in the past. Only real-time SIP needs Algo Trader
+    # Plus. So a historical backtest should always use SIP, not IEX.
+    if feed.feed == "sip":
+        try:
+            end_dt = datetime.fromisoformat(args.end.replace("Z", "+00:00"))
+            if end_dt.tzinfo is None:
+                end_dt = end_dt.replace(tzinfo=timezone.utc)
+            cutoff = datetime.now(timezone.utc) - timedelta(minutes=16)
+            if end_dt > cutoff:
+                print(f"ERROR: --end {args.end} is inside the last 15 minutes.")
+                print("SIP data that recent needs an Algo Trader Plus subscription.")
+                print(f"Use --end {cutoff.date().isoformat()} or earlier, or pass --feed iex.")
+                return 1
+        except ValueError:
+            pass  # a bare date is always safely in the past
+    else:
+        print(f"WARNING: using the {feed.feed} feed. IEX is ~2-3% of consolidated")
+        print("volume, so these z-scores reflect IEX noise rather than the market.")
+        print("For a historical window, 'sip' is free and far better. Use --feed sip.")
 
     all_bars = []
     for sym in cfg.strategy.symbols:
@@ -274,6 +295,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--start", required=True, help="ISO date, e.g. 2026-08-01")
     s.add_argument("--end", required=True, help="ISO date, e.g. 2026-09-01")
     s.add_argument("--price", type=float, default=650.0)
+    s.add_argument("--feed", default=None,
+                   help="sip (default, free for windows older than 15 min) or iex")
     s.set_defaults(func=cmd_realtest)
 
     s = sub.add_parser("report", help="rebuild the monthly report")
