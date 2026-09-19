@@ -115,7 +115,7 @@ def evaluate(cfg: Config, bars: list[Bar], cand: Candidate) -> Evaluation:
 
 
 def search(cfg: Config, bars: list[Bar], oos_fraction: float = 0.3,
-           min_trades: int = 30, top_n: int = 5) -> dict:
+           min_trades: int = 30, top_n: int = 6, max_per_family: int = 2) -> dict:
     in_s, out_s = split_bars(bars, oos_fraction)
     grid = build_grid()
 
@@ -126,8 +126,23 @@ def search(cfg: Config, bars: list[Bar], oos_fraction: float = 0.3,
             ranked.append(ev)
     ranked.sort(key=lambda e: e.t, reverse=True)
 
+    # Neighbouring parameter values produce near-identical trade sequences, so
+    # a plain top-N fills every holdout slot with one idea wearing different
+    # labels. Cap how many finalists each strategy family may contribute, which
+    # keeps the comparison across ideas rather than within one.
+    per_family: dict[str, int] = {}
+    distinct: list[Evaluation] = []
+    for ev in ranked:
+        fam = ev.candidate.name
+        if per_family.get(fam, 0) >= max_per_family:
+            continue
+        per_family[fam] = per_family.get(fam, 0) + 1
+        distinct.append(ev)
+        if len(distinct) >= top_n:
+            break
+
     finalists = []
-    for ev in ranked[:top_n]:
+    for ev in distinct:
         oos = evaluate(cfg, out_s, ev.candidate)
         finalists.append({
             "name": ev.candidate.name,
@@ -144,6 +159,7 @@ def search(cfg: Config, bars: list[Bar], oos_fraction: float = 0.3,
     return {
         "configs_tried": len(grid),
         "configs_with_enough_trades": len(ranked),
+        "families_represented": sorted(per_family),
         "in_sample_days": len({day_of(b) for b in in_s}),
         "out_of_sample_days": len({day_of(b) for b in out_s}),
         "in_sample_bars": len(in_s),

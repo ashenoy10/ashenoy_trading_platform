@@ -524,3 +524,16 @@ def test_orb_takes_at_most_one_trade_per_symbol_per_day():
 def test_bar_fills_missing_ohlc_from_close():
     b = Bar(ts=datetime(2026, 6, 1, 14, 0, tzinfo=timezone.utc), symbol="SPY", close=650.0)
     assert b.open == b.high == b.low == 650.0
+
+
+def test_search_limits_finalists_per_strategy_family():
+    """Neighbouring params give near-identical results, so a plain top-N
+    would fill every holdout slot with one idea under different labels."""
+    from collections import Counter
+    from hft.search import search
+    cfg = Config.from_env()
+    bars = list(SyntheticBars(bars=390 * 40, reversion=0.1, seed=5))
+    out = search(cfg, bars, oos_fraction=0.3, min_trades=5, top_n=6,
+                 max_per_family=2)
+    counts = Counter(f["name"] for f in out["finalists"])
+    assert counts and max(counts.values()) <= 2

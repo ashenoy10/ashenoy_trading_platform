@@ -274,11 +274,12 @@ def cmd_search(cfg: Config, args) -> int:
           f"in-sample,")
     print("so only the out-of-sample column below is evidence.\n")
     print(f"{'strategy':>16} {'IS bps':>8} {'IS t':>7} {'OOS bps':>9} "
-          f"{'OOS t':>7} {'OOS trades':>11}")
+          f"{'OOS t':>7} {'OOS n':>7}  params")
     for f in fins:
+        ps = ",".join(f"{k}={v}" for k, v in f["params"].items())
         print(f"{f['name']:>16} {f['in_sample']['bps']:>8.2f} "
               f"{f['in_sample']['t']:>7.2f} {f['out_of_sample']['bps']:>9.2f} "
-              f"{f['out_of_sample']['t']:>7.2f} {f['out_of_sample']['trades']:>11}")
+              f"{f['out_of_sample']['t']:>7.2f} {f['out_of_sample']['trades']:>7}  {ps}")
 
     best = max(fins, key=lambda f: f["out_of_sample"]["t"])
     ob, ot, on = (best["out_of_sample"]["bps"], best["out_of_sample"]["t"],
