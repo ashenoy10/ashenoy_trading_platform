@@ -32,13 +32,13 @@ about $0.81.
 | 1,000 | 4.38 bps | $812.57 | $1,313 |
 | 2,000 | 3.54 bps | $1,625.13 | $2,125 |
 
-Volume does lower the edge you need per trade. It raises what you must gross
-in total by exactly as much as it lowers the per-trade bar. At 2,000 trades
-you are running a $2,125/month operation to keep $500.
+Volume lowers the edge required per trade. It raises the total that must be
+grossed by exactly as much as it lowers the per-trade bar. At 2,000 trades
+that is a $2,125/month operation to keep $500.
 
-The premise was that volume converts a small per-trade edge into $500. The
-table shows the opposite: volume converts a small per-trade edge into a large
-cost base that the edge then has to cover.
+The common premise is that volume converts a small per-trade edge into a large
+income. The table shows the opposite: volume converts a small per-trade edge
+into a large cost base that the edge then has to cover.
 
 ## 3. The strategy confirms it
 
@@ -69,8 +69,8 @@ $81.50, **net -$113.97**, and the run halts on six consecutive losses. This is
 the null result the engine is supposed to produce, and it is asserted in
 `test_random_walk_loses_approximately_its_costs`.
 
-It is also what a strategy with no real edge will do to your $3,000: bleed it
-at the rate of the spread.
+It is also what a strategy with no real edge does to an account: bleeds it at
+the rate of the spread.
 
 ## 5. Leverage is the only lever that reaches the target
 
@@ -85,8 +85,8 @@ With generous mean reversion injected and tuned parameters:
 | 4x | $12,000 | $508.55 | -$101.00 |
 
 2x leverage clears $500. It also doubles the loss when the edge is absent,
-and 4x quadruples it. Leverage is a multiplier on whatever edge you have,
-including a negative one. The FINRA pattern day trader rule and its $25,000
+and 4x quadruples it. Leverage multiplies whatever edge is present, including
+a negative one. The FINRA pattern day trader rule and its $25,000
 minimum were eliminated effective 4 June 2026, so leverage is available to a
 $3,000 account in a way it was not before. That change makes this easier to
 attempt and no easier to survive.
@@ -107,9 +107,9 @@ equity touching $2,400:
 
 The cliff between 45% and 55% is the whole game. Everything depends on which
 side of break-even the strategy actually lands, and nothing in a backtest of
-synthetic data tells you that.
+synthetic data can establish that.
 
-## 7. The infrastructure you would be competing against
+## 7. The infrastructure this competes against
 
 The per-trade edge this requires, 4 to 7 bps, is in the range that
 market-making firms capture — with colocated servers, direct exchange feeds,
@@ -117,11 +117,11 @@ and microsecond latency. A retail REST API is three to four orders of
 magnitude slower. `python -m hft.cli latency` measures yours once keys exist;
 expect tens to hundreds of milliseconds.
 
-At that latency you are not capturing the spread, you are paying it. That is
-why the cost model charges the full half-spread on both sides by default. If
-you believe you can work passively and earn the spread instead, set
-`COST_SPREAD_CAPTURE` below 1.0 and re-run, but passive orders do not always
-fill, and the ones that fill fastest are the ones you least want.
+At that latency the spread is paid, not captured. That is why the cost model
+charges the full half-spread on both sides by default. To model passive
+execution instead, set `COST_SPREAD_CAPTURE` below 1.0 and re-run, bearing in
+mind that passive orders do not always fill and the ones that fill fastest are
+the ones filled against by better-informed flow.
 
 ## 8. Tested on real data: the strategy loses, exactly as predicted
 
@@ -148,24 +148,18 @@ equity floor halted trading at $2,397.50, which is the risk system working.
 
 ---
 
-## What I would do instead
+## What the evidence supports
 
-You asked for $500/month from $3,000, and I have built the platform to try it.
-The honest recommendation is different, and you should hear it once before
-deciding:
+1. **Measure before funding.** A real-data backtest on historical SIP bars is
+   free and is the only thing that turns "does an edge exist" from an opinion
+   into a measurement. If net edge per trade is not clearly positive after
+   costs, no amount of volume or leverage fixes it.
+2. **Judge on edge per trade, not total profit.** Eighty dollars across 400
+   trades at a positive per-trade edge is a far better sign than three hundred
+   across twelve lucky ones.
+3. **Match the target to the capital.** A monthly income target implies a
+   principal, and at Treasury yields $500/month implies roughly $165,000.
+   Small accounts are research budgets, not income bases.
 
-1. **Paper trade first, for a full month, on real SIP data.** Free except the
-   $99 data fee. It is the only thing that turns "does the edge exist" from an
-   opinion into a measurement. If net P&L per trade is not clearly positive
-   after costs, no amount of volume or leverage fixes it.
-2. **Judge it on edge per trade, not total profit.** A month that makes $80 on
-   400 trades at 0.5 bps net is a far better sign than one that makes $300 on
-   12 lucky trades.
-3. **Size the target to the capital, or the capital to the target.** $3,000
-   producing $75-150/month is an excellent outcome for a retail scalper. $500
-   is a $175,000 problem at Treasury yields, and somewhere in between for
-   anything riskier.
-
-If after the paper month the numbers support it, I will turn it on. If they
-do not, I will tell you plainly and we can talk about what the capital should
-actually be.
+[RESEARCH_PLAN.md](RESEARCH_PLAN.md) sets out where the search goes next and
+the conditions under which it should stop.

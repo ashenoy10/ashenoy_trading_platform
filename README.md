@@ -1,135 +1,52 @@
-# Scalping platform — $3,000 capital, $500/month cap
+# hft — a cost-accurate research harness for retail intraday strategies
 
-A high-frequency mean-reversion scalper for liquid US equity ETFs, with two
-things most retail trading code leaves out: a cost model that charges every
-fill what the market actually charges, and a profit governor that stops
-trading for the month the moment $500 is realized.
+Most retail backtests are optimistic because they fill at mid price, ignore
+regulatory fees, evaluate a strategy on the same data that chose it, and rank
+candidates by total profit. Each of those turns a losing strategy into a
+winning chart. This harness removes all four, then tells you plainly when an
+idea does not work.
 
-> **Searched properly. No strategy survives costs.** 126 configurations across
-> three strategy families, 20 months of real SPY and QQQ bars, validated on an
-> untouched 6-month holdout: every finalist loses out of sample. The best,
-> VWAP reversion, has a real +2.34 bps gross edge that a 2.71 bps round-trip
-> cost consumes entirely. See
-> [results/2026-09-19-strategy-search-run2.md](results/2026-09-19-strategy-search-run2.md).
->
-> **Edge in basis points is capital-independent, so more money does not fix
-> this.** A +2.34 bps edge against a 2.71 bps cost is negative at $3,000 and
-> equally negative at $300,000.
-
-> **The original z-score scalper also loses on real data.** Over 736 trades on
-> real SPY and QQQ minute bars, gross P&L was -$4.84 and costs were $597.66,
-> for a net loss of $602.50, or 20.1% of capital in three and a half months.
-> Average net edge was -2.75 bps per trade. See
-> [results/2026-09-19-real-backtest.md](results/2026-09-19-real-backtest.md).
-> **Do not fund this.**
-
-**Read [FINDINGS.md](FINDINGS.md) before funding anything.** The platform is
-built and tested, but the arithmetic of the target is not favourable, and the
-specific mechanism you proposed — volume compensating for a small per-trade
-edge — works against you rather than for you. That document shows the numbers,
-now confirmed on real prices.
-
----
-
-## The short version
-
-$500/month on $3,000 is **16.7% per month, 536% annualized**. The costs are
-small but they are charged per trade, so raising the trade count raises total
-cost in direct proportion:
-
-| Trades/month | Cost/trade | Gross edge needed | Total costs/month |
-|---:|---:|---:|---:|
-| 50 | 2.71 bps | 36.04 bps | $40.63 |
-| 250 | 2.71 bps | 9.38 bps | $203.14 |
-| 1,000 | 2.71 bps | 4.38 bps | $812.57 |
-| 2,000 | 2.71 bps | 3.54 bps | $1,625.13 |
-
-At 2,000 trades a month you must gross **$2,125** to keep $500. Volume lowers
-the per-trade bar and raises the toll at the same time, and the toll wins
-before the bar gets low enough to be easy. This is measured, not asserted:
-`test_higher_frequency_erodes_net_edge_per_trade` in the suite holds the
-strategy and the data fixed, raises the trade count, and shows net edge per
-trade falling.
-
-Run it yourself:
+It is deliberately built to produce negative results. Every strategy tested in
+it so far has failed, and the [results](results/) directory records exactly
+how. That is the harness working, not the harness broken.
 
 ```
-python -m hft.cli feasibility
-python -m hft.cli frequency
-python -m hft.cli leverage
-python -m hft.cli ruin
+pip install -r requirements.txt
+python -m pytest tests -q          # 59 tests
+python -m hft.cli feasibility      # what a given target demands
 ```
 
 ---
 
-## What it costs to run
+## What it does differently
 
-| Item | Cost |
-|---|---:|
-| Alpaca account, commissions, withdrawals | $0 |
-| GitHub Actions (reporting) | $0 |
-| SEC Section 31 fee | $20.60 per $1M sold |
-| FINRA Trading Activity Fee | $0.000166/share sold, capped $8.30 |
-| Alpaca SIP **historical** data (backtesting) | $0 |
-| Alpaca SIP **real-time** data (live trading) | $99/month |
+**Every fill pays what the market charges.** Half the quoted spread each way,
+slippage, SEC Section 31 at $20.60 per $1M on sells, and the FINRA Trading
+Activity Fee with its per-trade cap. On $3,000 of a liquid ETF that is 2.71
+basis points per round trip. Strategies that look profitable on mid prices
+usually die here, which is the point.
 
-The data line splits in two, and the split matters.
+**Selection and validation use different data.** `hft.search` splits the
+window chronologically, fits and ranks every candidate on the earlier portion,
+and leaves the later holdout untouched until finalists are chosen. Days never
+straddle the boundary, and the split is never random, because shuffling time
+series leaks the future into the past.
 
-**Backtesting is free.** Alpaca's Basic plan serves full SIP data for any
-window ending more than 15 minutes in the past. So the decisive test, whether
-this strategy has a positive edge after costs on real market data, costs
-nothing. Do not pay for anything before running it.
+**Ranking is by t-statistic, not profit.** A configuration that made money on
+six lucky trades cannot outrank a steadier one. The harness also reports how
+many configurations were tried, because the best of K always looks good
+in-sample.
 
-**Live trading is not.** Real-time SIP quotes require the Algo Trader Plus
-plan at $99/month. The free real-time feed is IEX only, roughly 2-3% of
-consolidated volume, and a strategy that triggers on short-horizon price
-extremes computed from 3% of the tape is measuring noise rather than the
-market. That $99 is 20% of the target and does not scale down in a bad month,
-so it is the one expense to unblock, and only once the free backtest justifies
-it.
+**The verdict logic refuses rather than rationalises.** If the best finalist
+loses out of sample, it says the in-sample result was curve fit. If it wins
+but the t-statistic is under 2, it says that is indistinguishable from luck.
+Only a positive holdout edge with enough trades behind it gets a green light,
+and even then it recommends paper trading first.
 
----
-
-## What actually got built
-
-```
-hft/
-  config.py        capital, target, risk limits, cost model, strategy params
-  costs.py         per-fill spread, slippage, SEC Section 31, FINRA TAF
-  feasibility.py   required edge, required win rate, Kelly, risk of ruin
-  strategy.py      z-score mean reversion with stop, hold limit, session guard
-  risk.py          hard limits + the profit governor that stops at $500
-  backtest.py      event-driven, full costs, same control path as live
-  marketdata.py    Alpaca bars + synthetic generator with tunable edge
-  broker.py        Alpaca REST execution, double-guarded, latency probe
-  runner.py        live/paper loop, persists every closed trade
-  state.py         month state, committed to git
-  report.py        the monthly report
-  cli.py           entry point
-tests/             44 tests
-```
-
-### The governor
-
-Your "stop once $500 is hit" is implemented as a first-class control, not a
-check at the end. `ProfitGovernor` holds the month's realized net P&L and
-refuses new entries once the target is met; open positions still exit
-normally. It also caps your exposure window, which on $3,000 is the most
-effective risk control available — the account is only in the market for as
-long as it takes to earn the target.
-
-### The risk limits
-
-On $3,000 the realistic failure is not underperformance, it is a dead account.
-Checked before every entry: 3% daily loss limit, 10% monthly loss limit, 0.5%
-risk per trade, 6 consecutive losses, 40 trades per day, and a hard equity
-floor at 80% of capital that no new day resets.
-
-### Order safety
-
-`USE_ALPACA` and `HFT_LIVE_ORDERS` must **both** be exactly `true` before any
-order leaves the process, including against the paper endpoint. Two tests
-enforce it.
+**Risk limits are enforced in the backtest, not bolted on later.** Daily and
+monthly loss limits, per-trade risk budget, consecutive-loss and trade-count
+caps, and a hard equity floor all run in the same code path the live runner
+uses, so a backtest cannot show returns the live system would have halted.
 
 ---
 
@@ -137,32 +54,103 @@ enforce it.
 
 | Command | What it does |
 |---|---|
-| `python -m hft.cli feasibility` | Required edge and win rate for the target |
-| `python -m hft.cli costs` | Round-trip cost breakdown for one position |
-| `python -m hft.cli backtest` | Run the strategy with full costs |
-| `python -m hft.cli sweep` | How much edge the market would have to contain |
-| `python -m hft.cli frequency` | Net edge per trade as volume rises |
-| `python -m hft.cli leverage` | Leverage sensitivity, with and without edge |
-| `python -m hft.cli ruin` | Probability of hitting the equity floor |
-| `python -m hft.cli latency` | Measure broker round-trip time |
-| `python -m hft.cli realtest` | Backtest on real Alpaca minute bars |
-| `python -m hft.cli report` | Rebuild the monthly report |
+| `feasibility` | Gross edge and win rate a target demands, by trade count |
+| `costs` | Round-trip cost breakdown for one position |
+| `backtest` | Run a strategy on synthetic bars with full costs |
+| `realtest` | Run on real Alpaca minute bars, with a verdict |
+| `search` | Search all candidates with an out-of-sample holdout |
+| `frequency` | Net edge per trade as trade frequency rises |
+| `leverage` | Leverage sensitivity, with and without edge |
+| `ruin` | Monte Carlo probability of hitting the equity floor |
+| `sweep` | How much edge the market would need to contain |
+| `latency` | Measure broker round-trip time |
+| `report` | Rebuild the monthly report |
 
-```
-pip install -r requirements.txt
-python -m pytest tests -q
-```
+Historical SIP data is free on Alpaca's Basic plan for any window ending more
+than 15 minutes in the past, so research costs nothing. Only real-time SIP
+needs the $99/month Algo Trader Plus plan.
 
 ---
 
-## Honest limits of the backtest
+## Layout
 
-All external market data is blocked from the environment this was built in, so
-the backtests here run on a **synthetic generator**, not real prices. That
-validates the machinery — the engine loses exactly its costs on a random walk
-and profits only when edge is injected — but it says nothing about whether the
-edge exists in the real market.
+```
+hft/
+  config.py       capital, target, risk limits, cost model, strategy params
+  costs.py        per-fill spread, slippage, SEC Section 31, FINRA TAF
+  feasibility.py  required edge, required win rate, Kelly, risk of ruin
+  strategy.py     z-score mean reversion, and the Bar/Signal types
+  signals.py      opening range breakout, VWAP reversion, momentum
+  search.py       grid search with chronological holdout and t-ranking
+  backtest.py     event-driven, full costs, same control path as live
+  risk.py         hard limits, halt scopes, and the profit governor
+  marketdata.py   Alpaca bars plus a synthetic generator with tunable edge
+  broker.py       Alpaca REST execution, double-guarded, latency probe
+  runner.py       live/paper loop, persists every closed trade
+  state.py        month state, committed to git
+  report.py       monthly report
+  cli.py          entry point
+results/          recorded findings, including every negative result
+```
 
-Before any money moves, the same backtest has to run on real Alpaca minute
-bars. `hft.marketdata.AlpacaBars` is written and ready; it needs your keys.
-That is step one in [OPERATIONS.md](OPERATIONS.md).
+### Adding a strategy
+
+Implement `on_bar(bar) -> Signal`, `mark_entry`, `mark_exit`, and optionally
+`stop_bps_for(bar)` to declare your own stop distance for position sizing. Add
+it to the grid in `hft/search.py`. The backtester drives any object with that
+shape, so a new idea needs no engine changes.
+
+---
+
+## Safety
+
+No order reaches a broker unless `USE_ALPACA` and `HFT_LIVE_ORDERS` are both
+exactly `true`, including against the paper endpoint. Two tests enforce it.
+The default configuration is simulated, and credentials come from the
+environment, never from a committed file.
+
+---
+
+## Findings so far
+
+Three structurally different strategy families, 126 configurations, 20 months
+of real SPY and QQQ minute bars, validated on an untouched 6-month holdout.
+Every finalist loses out of sample.
+
+| Strategy | In-sample | Out-of-sample | OOS t |
+|---|---:|---:|---:|
+| Opening range breakout | +4.71 bps | -13.54 bps | -3.53 |
+| Momentum | +0.21 bps | -7.73 bps | -3.33 |
+| VWAP reversion | -1.87 bps | -0.37 bps | -0.13 |
+
+The informative result is the cost decomposition. Breakout and momentum are
+directionally wrong and lose before costs apply. VWAP reversion carries a real
+**+2.34 bps gross edge that the 2.71 bps round-trip cost consumes entirely**.
+The intraday reversion effect exists and has been arbitraged down to almost
+exactly the level of the toll required to harvest it.
+
+Edge measured in basis points does not scale with account size, so this is not
+a capital problem. A +2.34 bps edge against a 2.71 bps cost is negative at
+$3,000 and equally negative at $300,000.
+
+Full write-ups: [FINDINGS.md](FINDINGS.md) and [results/](results/).
+Where the research goes next: [RESEARCH_PLAN.md](RESEARCH_PLAN.md).
+Running it against a live account: [OPERATIONS.md](OPERATIONS.md).
+
+---
+
+## Running research
+
+Two workflows run against real data on GitHub Actions, driven by committed
+request files so every run leaves an auditable record of its parameters:
+
+- `real-backtest.yml` — single strategy, edit `backtest-request.json`
+- `strategy-search.yml` — full search, edit `search-request.json`
+
+Both need `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` as repository secrets. Use
+paper-account keys: market data plans apply to paper and live accounts alike,
+and research never places an order.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -8,7 +8,7 @@ prove nothing about profitability. Do these in order.
 
 **Step 1 — real-data backtest.** Add Alpaca keys as repository secrets, then
 run the **real-data-backtest** workflow from the Actions tab with a start and
-end date. Read `FINDINGS.md` first so you know which number decides it:
+end date. `FINDINGS.md` explains which number decides it:
 average net basis points per trade, after costs. Free.
 
 This runs on a GitHub runner rather than in a Claude cloud session, because
@@ -22,8 +22,8 @@ decisions need real-time SIP quotes and the free real-time feed is IEX only,
 2-3% of volume. Step 1 does not need it: historical SIP is free.
 
 **Step 3 — decide.** If average net edge per trade is not clearly positive
-across several hundred paper trades, stop. If it is, fund with an amount you
-are willing to lose entirely and start at 1x leverage.
+across several hundred paper trades, stop. If it is, fund only an amount that
+can be lost entirely, and start at 1x leverage.
 
 ## Division of labor
 
@@ -50,7 +50,7 @@ So the monthly withdrawal is one click in the dashboard. ACH is free.
      account keys. Market data plans apply to paper and live accounts alike,
      so paper keys pull the same bars. Steps 1 and 2 never need a live key,
      and this repository is public, so a key that can move real money does
-     not belong in its secrets until you have decided to fund.
+     not belong in repository secrets until funding is decided.
    - Variables: `ALPACA_BASE_URL`, `USE_ALPACA`, `HFT_LIVE_ORDERS`,
      `HFT_CAPITAL`, `HFT_MONTHLY_TARGET`, `ALPACA_DATA_FEED`
 4. Keep `HFT_LIVE_ORDERS=false` until step 3 above is passed.
@@ -74,7 +74,7 @@ strategy; the monthly total is just its consequence.
 | 3% daily loss | Stops for the day. Resumes next session. |
 | 10% monthly loss | Stops for the month. |
 | 6 consecutive losses | Stops until a new day. |
-| Equity below 80% of capital | Full halt. Does not reset. Requires your decision. |
+| Equity below 80% of capital | Full halt. Does not reset. Requires human review. |
 
 The equity floor is deliberate. If the account is down 20%, the strategy has
 been wrong for long enough that it should not be allowed to keep going without
