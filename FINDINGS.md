@@ -123,6 +123,29 @@ you believe you can work passively and earn the spread instead, set
 `COST_SPREAD_CAPTURE` below 1.0 and re-run, but passive orders do not always
 fill, and the ones that fill fastest are the ones you least want.
 
+## 8. Tested on real data: the strategy loses, exactly as predicted
+
+`results/2026-09-19-real-backtest.md` has the full run. 134,618 real SPY and
+QQQ minute bars from Alpaca's SIP feed, 1 June to 15 September 2026.
+
+| Metric | Value |
+|---|---:|
+| Trades | 736 |
+| Gross P&L | -$4.84 |
+| Costs paid | $597.66 |
+| Net P&L | -$602.50 |
+| Average net edge per trade | -2.75 bps |
+| Return on capital | -20.1% |
+
+Gross P&L across 736 trades is -$4.84, which is zero within noise. The signal
+predicts nothing. The whole loss is the cost base: $597.66 of spread, slippage
+and fees, against a modelled round-trip cost of 2.71 bps and a realized net
+edge of -2.75 bps per trade.
+
+This is section 2 confirmed on real prices. Volume did not convert a small
+edge into $500; it converted no edge into a 20% drawdown in three months. The
+equity floor halted trading at $2,397.50, which is the risk system working.
+
 ---
 
 ## What I would do instead

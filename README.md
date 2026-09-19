@@ -5,10 +5,18 @@ things most retail trading code leaves out: a cost model that charges every
 fill what the market actually charges, and a profit governor that stops
 trading for the month the moment $500 is realized.
 
+> **Tested on real market data. The strategy loses money.** Over 736 trades on
+> real SPY and QQQ minute bars, gross P&L was -$4.84 and costs were $597.66,
+> for a net loss of $602.50, or 20.1% of capital in three and a half months.
+> Average net edge was -2.75 bps per trade. See
+> [results/2026-09-19-real-backtest.md](results/2026-09-19-real-backtest.md).
+> **Do not fund this.**
+
 **Read [FINDINGS.md](FINDINGS.md) before funding anything.** The platform is
 built and tested, but the arithmetic of the target is not favourable, and the
 specific mechanism you proposed — volume compensating for a small per-trade
-edge — works against you rather than for you. That document shows the numbers.
+edge — works against you rather than for you. That document shows the numbers,
+now confirmed on real prices.
 
 ---
 
