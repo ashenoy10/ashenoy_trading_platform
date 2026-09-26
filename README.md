@@ -12,7 +12,7 @@ how. That is the harness working, not the harness broken.
 
 ```
 pip install -r requirements.txt
-python -m pytest tests -q          # 59 tests
+python -m pytest tests -q          # 68 tests
 python -m hft.cli feasibility      # what a given target demands
 ```
 
@@ -90,6 +90,7 @@ hft/
   state.py        month state, committed to git
   report.py       monthly report
   cli.py          entry point
+  mcp_server.py   MCP server exposing the harness to Claude and other clients
 results/          recorded findings, including every negative result
 ```
 
@@ -136,6 +137,39 @@ $3,000 and equally negative at $300,000.
 Full write-ups: [FINDINGS.md](FINDINGS.md) and [results/](results/).
 Where the research goes next: [RESEARCH_PLAN.md](RESEARCH_PLAN.md).
 Running it against a live account: [OPERATIONS.md](OPERATIONS.md).
+
+---
+
+## Using it from Claude (MCP)
+
+`hft/mcp_server.py` exposes the harness as a [Model Context
+Protocol](https://modelcontextprotocol.io) server, so Claude can price trades,
+check feasibility and run backtests itself instead of you pasting CLI output.
+
+| Tool | What it does |
+|---|---|
+| `round_trip_costs` | Cost breakdown for one position, overridable spread/slippage |
+| `feasibility` | Edge and win rate a target demands at a given trade count |
+| `ruin_probability` | Monte Carlo risk of ruin, Kelly fraction, expectancy |
+| `synthetic_backtest` | Strategy on generated bars with tunable reversion and params |
+| `real_backtest` | Strategy on real Alpaca minute bars, with a verdict |
+
+Resources: `findings://summary`, `findings://research-plan`, `results://index`,
+`results://{name}`, and `config://current`.
+
+The committed `.mcp.json` registers it with Claude Code automatically when you
+open the repo. For other clients:
+
+```
+python -m hft.mcp_server                      # stdio
+python -m hft.mcp_server --http --port 8000   # Streamable HTTP at /mcp
+claude mcp add hft-research -- python -m hft.mcp_server
+```
+
+Every tool is read-only. The server never imports `hft.broker`, so it cannot
+place an order regardless of `USE_ALPACA` or `HFT_LIVE_ORDERS`, and a test
+enforces that. `real_backtest` reads the Alpaca keys from the server's
+environment and uses market data only.
 
 ---
 

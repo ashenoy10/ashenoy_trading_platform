@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "hft-research": {
+      "command": "python",
+      "args": ["-m", "hft.mcp_server"]
+    }
+  }
+}
